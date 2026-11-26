@@ -1,6 +1,8 @@
 import React, { useEffect, useState } from "react";
 import { useParams, Link } from "react-router-dom";
 import { api } from "../api/client.js";
+import { useMetaConfig } from "../hooks/useMeta.js";
+import { formatRefundReviewNotice } from "../utils/format.js";
 import { StatusBadge } from "../components/StatusBadge.jsx";
 import { LoadingSpinner } from "../components/LoadingSpinner.jsx";
 import { InlineAlert } from "../components/InlineAlert.jsx";
@@ -16,6 +18,7 @@ const REFUND_REASONS = [
 
 export function OrderDetail() {
   const { orderId } = useParams();
+  const { config: metaConfig, error: configError, refetch: refetchConfig } = useMetaConfig();
 
   const [order, setOrder] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -302,7 +305,7 @@ export function OrderDetail() {
             Request a refund
           </h2>
           <p className="text-xs text-slate-600 mb-4">
-            Orders within {legalConfig.returnWindowDays} days of delivery may be refunded up to the remaining
+            Orders within {metaConfig?.return_window_days ?? legalConfig.returnWindowDays} days of delivery may be refunded up to the remaining
             balance of {formatMoney(order.refundable_amount)}.
           </p>
 
@@ -375,10 +378,28 @@ export function OrderDetail() {
               />
             </div>
 
-            <div className="text-xs text-slate-500 bg-slate-50 border border-slate-200 rounded-md p-3">
-              Requests up to INR {legalConfig.refundLimitInr.toLocaleString()} may be processed automatically.
-              Requests exceeding this amount or requiring item returns are routed to support staff for verification.
-            </div>
+            {configError ? (
+              <InlineAlert type="error" title="Unable to load refund review rules">
+                <div className="flex items-center justify-between">
+                  <span>{configError}</span>
+                  <button
+                    type="button"
+                    onClick={refetchConfig}
+                    className="font-medium underline hover:text-rose-950 ml-4"
+                  >
+                    Retry
+                  </button>
+                </div>
+              </InlineAlert>
+            ) : metaConfig ? (
+              <div className="text-xs text-slate-500 bg-slate-50 border border-slate-200 rounded-md p-3">
+                {formatRefundReviewNotice(metaConfig)}
+              </div>
+            ) : (
+              <div className="text-xs text-slate-400 bg-slate-50 border border-slate-200 rounded-md p-3">
+                Loading refund review policy...
+              </div>
+            )}
 
             <button
               type="submit"

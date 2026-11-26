@@ -77,7 +77,7 @@ def test_customer_forbidden_on_all_staff_routes(
 
 def test_agent_and_admin_authorized_on_staff_routes(client: TestClient, db_session: Session) -> None:
     agent = _get_user_by_email(db_session, "agent1@example.com")
-    admin = _get_user_by_email(db_session, "admin@example.com")
+    admin = _get_user_by_email(db_session, "admin1@example.com") or _get_user_by_email(db_session, "admin@example.com")
 
     # Agent -> 200
     res_agent = client.get("/api/v1/staff/tickets", headers=_auth_header(agent))

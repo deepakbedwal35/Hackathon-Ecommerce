@@ -11,6 +11,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 import structlog
 
+from app.core.config import settings
 from app.core.errors import AppError
 from app.core.policy import (
     AUTO_REFUND_LIMIT,
@@ -317,8 +318,14 @@ def request_refund(
             message="An active refund request already exists for this order.",
         )
 
-    # 9. Threshold Check: cumulative refunded + this amount > 5000.00 INR -> Human Escalation Path
-    if (existing_refunds_sum + dec_amount) > AUTO_REFUND_LIMIT:
+    # 9. Threshold Check: cumulative refunded + this amount > AUTO_REFUND_LIMIT or mode == 'all' -> Human Escalation Path
+    mode = getattr(settings, "REFUND_REVIEW_MODE", "above_limit").lower()
+    needs_review = (
+        mode == "all"
+        or dec_amount > AUTO_REFUND_LIMIT
+        or (existing_refunds_sum + dec_amount) > AUTO_REFUND_LIMIT
+    )
+    if needs_review:
         try:
             # Bind to ticket or create one
             bound_ticket_id = ticket_id
@@ -511,10 +518,10 @@ def approve_escalated_refund(
     note: str | None = None,
 ) -> RefundResult:
     """Staff decision path to approve an escalated refund."""
-    if staff_user.role not in (UserRole.AGENT, UserRole.ADMIN):
+    if staff_user.role != UserRole.ADMIN:
         raise AppError(
             code="FORBIDDEN",
-            message="Only staff agents or administrators can approve escalated refunds.",
+            message="Only administrators can approve escalated refunds.",
             status_code=403,
         )
 
@@ -645,10 +652,10 @@ def reject_refund(
     message_to_customer: str | None = None,
 ) -> RefundResult:
     """Staff decision path to reject an escalated refund."""
-    if staff_user.role not in (UserRole.AGENT, UserRole.ADMIN):
+    if staff_user.role != UserRole.ADMIN:
         raise AppError(
             code="FORBIDDEN",
-            message="Only staff agents or administrators can reject refunds.",
+            message="Only administrators can reject refunds.",
             status_code=403,
         )
 

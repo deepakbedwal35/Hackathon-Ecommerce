@@ -1,20 +1,25 @@
 import React, { useState } from "react";
-import { Link, useLocation, useNavigate } from "react-router-dom";
+import { Link, Navigate, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { InlineAlert } from "../components/InlineAlert";
 import { LoadingSpinner } from "../components/LoadingSpinner";
 import { legalConfig } from "../config/legal";
+import { getRoleHomePath } from "../utils/format.js";
 
 export function Login() {
-  const { login } = useAuth();
+  const { login, isAuthenticated, user } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
-  const from = location.state?.from?.pathname || "/";
+  const from = location.state?.from?.pathname || "";
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+
+  if (isAuthenticated && user) {
+    return <Navigate to={getRoleHomePath(user)} replace />;
+  }
 
   async function handleSubmit(e) {
     e.preventDefault();
@@ -22,8 +27,14 @@ export function Login() {
     setLoading(true);
 
     try {
-      await login(email, password);
-      navigate(from, { replace: true });
+      const loggedInUser = await login(email, password);
+      const homePath = getRoleHomePath(loggedInUser);
+      const isStaff = homePath === "/staff";
+      const target =
+        from && from !== "/login" && (isStaff ? from.startsWith("/staff") : !from.startsWith("/staff"))
+          ? from
+          : homePath;
+      navigate(target, { replace: true });
     } catch (err) {
       setError(err.message || "Failed to sign in. Verify your credentials.");
     } finally {
@@ -109,14 +120,14 @@ export function Login() {
         </div>
 
         <div className="mt-6 pt-4 border-t border-slate-100">
-          <div className="text-[11px] font-medium text-slate-500 mb-2">Demo customer accounts:</div>
+          <div className="text-[11px] font-medium text-slate-500 mb-2">Demo accounts:</div>
           <div className="space-y-1.5">
             <button
               type="button"
               onClick={() => handleQuickFill("customer1@example.com", "LocalDevDemo123!")}
               className="w-full text-left text-[11px] px-2.5 py-1.5 border border-slate-200 rounded-md hover:bg-slate-50 transition-colors text-slate-700 flex justify-between"
             >
-              <span>customer1@example.com</span>
+              <span>customer1@example.com (Customer)</span>
               <span className="text-slate-400">LocalDevDemo123!</span>
             </button>
             <button
@@ -124,7 +135,23 @@ export function Login() {
               onClick={() => handleQuickFill("customer2@example.com", "LocalDevDemo123!")}
               className="w-full text-left text-[11px] px-2.5 py-1.5 border border-slate-200 rounded-md hover:bg-slate-50 transition-colors text-slate-700 flex justify-between"
             >
-              <span>customer2@example.com</span>
+              <span>customer2@example.com (Customer)</span>
+              <span className="text-slate-400">LocalDevDemo123!</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => handleQuickFill("agent1@example.com", "LocalDevDemo123!")}
+              className="w-full text-left text-[11px] px-2.5 py-1.5 border border-slate-200 rounded-md hover:bg-slate-50 transition-colors text-slate-700 flex justify-between"
+            >
+              <span>agent1@example.com (Support agent)</span>
+              <span className="text-slate-400">LocalDevDemo123!</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => handleQuickFill("admin1@example.com", "LocalDevDemo123!")}
+              className="w-full text-left text-[11px] px-2.5 py-1.5 border border-slate-200 rounded-md hover:bg-slate-50 transition-colors text-slate-700 flex justify-between"
+            >
+              <span>admin1@example.com (Admin)</span>
               <span className="text-slate-400">LocalDevDemo123!</span>
             </button>
           </div>

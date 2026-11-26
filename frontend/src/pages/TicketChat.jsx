@@ -1,6 +1,8 @@
 import React, { useEffect, useState, useRef } from "react";
 import { useParams, Link } from "react-router-dom";
 import { api } from "../api/client.js";
+import { useMetaEnums } from "../hooks/useMeta.js";
+import { getEnumLabel } from "../utils/format.js";
 import { StatusBadge } from "../components/StatusBadge.jsx";
 import { LoadingSpinner } from "../components/LoadingSpinner.jsx";
 import { InlineAlert } from "../components/InlineAlert.jsx";
@@ -8,6 +10,7 @@ import { IconArrowLeft, IconRefresh } from "../components/Icons.jsx";
 
 export function TicketChat() {
   const { ticketId } = useParams();
+  const { enums } = useMetaEnums();
 
   const [ticket, setTicket] = useState(null);
   const [messages, setMessages] = useState([]);
@@ -92,8 +95,9 @@ export function TicketChat() {
   function getSenderLabel(senderType) {
     const type = String(senderType).toLowerCase();
     if (type === "customer") return "You";
-    if (type === "agent") return "AI assistant";
-    if (type === "staff") return "Support staff";
+    if (type === "agent_ai" || type === "agent") return "AI assistant";
+    if (type === "staff") return "Support team";
+    if (type === "system") return "System";
     return "Support";
   }
 
@@ -158,7 +162,7 @@ export function TicketChat() {
               {ticket.subject}
             </h1>
             <p className="text-xs text-slate-500 mt-0.5">
-              Ticket category: {String(ticket.category).replace(/_/g, " ")}
+              Ticket category: {getEnumLabel(enums?.ticket_categories, ticket.category)}
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -207,9 +211,10 @@ export function TicketChat() {
           </p>
         ) : (
           messages.map((msg) => {
-            const isCustomer = String(msg.sender_type).toLowerCase() === "customer";
-            const isAgent = String(msg.sender_type).toLowerCase() === "agent";
-            const isStaff = String(msg.sender_type).toLowerCase() === "staff";
+            const senderLower = String(msg.sender_type).toLowerCase();
+            const isCustomer = senderLower === "customer";
+            const isAgent = senderLower === "agent_ai" || senderLower === "agent";
+            const isStaff = senderLower === "staff";
 
             return (
               <div

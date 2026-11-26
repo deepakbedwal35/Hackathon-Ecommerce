@@ -1,12 +1,15 @@
 import React, { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../api/client.js";
+import { useMetaEnums } from "../hooks/useMeta.js";
+import { getEnumLabel } from "../utils/format.js";
 import { StatusBadge } from "../components/StatusBadge.jsx";
 import { LoadingSpinner } from "../components/LoadingSpinner.jsx";
 import { InlineAlert } from "../components/InlineAlert.jsx";
 import { IconChevronRight, IconTicket } from "../components/Icons.jsx";
 
 export function Tickets() {
+  const { enums } = useMetaEnums();
   const [tickets, setTickets] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -120,8 +123,8 @@ export function Tickets() {
                     <td className="px-4 py-3 font-medium text-slate-900 max-w-xs truncate">
                       {ticket.subject}
                     </td>
-                    <td className="px-4 py-3 text-slate-600 capitalize">
-                      {String(ticket.category).replace(/_/g, " ")}
+                    <td className="px-4 py-3 text-slate-600">
+                      {getEnumLabel(enums?.ticket_categories, ticket.category)}
                     </td>
                     <td className="px-4 py-3">
                       <StatusBadge status={ticket.status} />

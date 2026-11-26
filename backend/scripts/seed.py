@@ -17,6 +17,7 @@ from app.core.db import SessionLocal
 from app.core.security import hash_password
 from app.models.enums import (
     ActorType,
+    EscalationDecision,
     ItemCategory,
     OrderStatus,
     RefundStatus,
@@ -67,7 +68,7 @@ def seed_database(reset: bool = False, session: Session | None = None) -> None:
             ("Customer One", "customer1@example.com", UserRole.CUSTOMER),
             ("Customer Two", "customer2@example.com", UserRole.CUSTOMER),
             ("Support Agent Sarah", "agent1@example.com", UserRole.AGENT),
-            ("System Admin Alex", "admin@example.com", UserRole.ADMIN),
+            ("System Admin One", "admin1@example.com", UserRole.ADMIN),
         ]
 
         users_by_email: dict[str, User] = {}
@@ -257,81 +258,133 @@ def seed_database(reset: bool = False, session: Session | None = None) -> None:
             session.flush()
 
             orders_map["order_a"] = order_a
+            orders_map["order_c"] = order_c
+            orders_map["order_e"] = order_e
+            orders_map["order_f"] = order_f
         else:
             orders_map["order_a"] = existing_orders[0]
+            for o in existing_orders:
+                if o.order_number == "ORD-1003":
+                    orders_map["order_c"] = o
+                elif o.order_number == "ORD-1005":
+                    orders_map["order_e"] = o
+                elif o.order_number == "ORD-1006":
+                    orders_map["order_f"] = o
 
-        # 3. Seed sample Ticket with messages for customer1 on Order A
+        # 3. Seed sample Tickets with messages across customers
         existing_tickets = session.scalars(
-            select(Ticket).where(Ticket.customer_id == cust1.id)
+            select(Ticket)
         ).first()
 
         if not existing_tickets:
-            sample_ticket = Ticket(
+            # Ticket 1: Customer 1 on Order A (open issue)
+            order_a_row = orders_map.get("order_a") or (existing_orders[0] if existing_orders else None)
+            t1 = Ticket(
                 customer_id=cust1.id,
-                order_id=orders_map["order_a"].id,
+                order_id=order_a_row.id if order_a_row else None,
                 subject="Defective earbuds received with order",
                 description="Left earbud is not holding charge and fails to pair.",
                 category=TicketCategory.ORDER_ISSUE,
                 status=TicketStatus.OPEN,
                 priority=TicketPriority.MEDIUM,
             )
-            session.add(sample_ticket)
+            session.add(t1)
             session.flush()
 
             msg1 = Message(
-                ticket_id=sample_ticket.id,
+                ticket_id=t1.id,
                 sender_type=SenderType.CUSTOMER,
                 sender_id=cust1.id,
                 content="Hi, I received my wireless earbuds 5 days ago, but the left earbud doesn't charge. Can I get a replacement or refund?",
             )
             msg2 = Message(
-                ticket_id=sample_ticket.id,
+                ticket_id=t1.id,
                 sender_type=SenderType.SYSTEM,
                 sender_id=None,
                 content="Ticket #1001 created automatically. Support agent or AI assigned.",
             )
             msg3 = Message(
-                ticket_id=sample_ticket.id,
+                ticket_id=t1.id,
                 sender_type=SenderType.AGENT_AI,
                 sender_id=None,
-                content="Hello Customer! We apologize for the trouble with your earbuds. Since your order was delivered 5 days ago, you are within the 7-day return policy. Would you prefer a free replacement or a refund to your original payment method?",
+                content="Hello Customer! We apologize for the trouble with your earbuds. Since your order was delivered 5 days ago, you are within the return policy. Would you prefer a free replacement or a refund to your original payment method?",
             )
             session.add_all([msg1, msg2, msg3])
 
-            # Audit event for ticket creation
-            audit = AuditEvent(
-                actor_id=cust1.id,
-                actor_type=ActorType.CUSTOMER,
-                event_type="ticket_created",
-                entity_type="ticket",
-                entity_id=sample_ticket.id,
-                audit_metadata={"subject": sample_ticket.subject, "order_id": str(orders_map["order_a"].id)},
-                request_id="seed_initial_request_id",
-            )
-            session.add(audit)
+            # Ticket 2: Customer 1 on Order E (refund inquiry ticket)
+            if "order_e" in orders_map or len(existing_orders) > 4:
+                order_e_row = orders_map.get("order_e", existing_orders[4] if len(existing_orders) > 4 else None)
+                t2 = Ticket(
+                    customer_id=cust1.id,
+                    order_id=order_e_row.id if order_e_row else None,
+                    subject="Inquiry regarding processed refund on Order E",
+                    description="Customer checking return credit timing for shoes.",
+                    category=TicketCategory.REFUND,
+                    status=TicketStatus.RESOLVED,
+                    priority=TicketPriority.LOW,
+                )
+                session.add(t2)
+                session.flush()
+
+                msg_t2_1 = Message(
+                    ticket_id=t2.id,
+                    sender_type=SenderType.CUSTOMER,
+                    sender_id=cust1.id,
+                    content="Hello, when will the refund of 1599 INR reflect on my statement?",
+                )
+                msg_t2_2 = Message(
+                    ticket_id=t2.id,
+                    sender_type=SenderType.AGENT_AI,
+                    sender_id=None,
+                    content="Your refund has been processed. Depending on your bank, it typically reflects in 5 to 7 business days.",
+                )
+                session.add_all([msg_t2_1, msg_t2_2])
+
+            # Ticket 3: Customer 2 on Order F (delivery issue)
+            if "order_f" in orders_map or len(existing_orders) > 5:
+                order_f_row = orders_map.get("order_f", existing_orders[5] if len(existing_orders) > 5 else None)
+                t3 = Ticket(
+                    customer_id=cust2.id,
+                    order_id=order_f_row.id if order_f_row else None,
+                    subject="Tracking question for mechanical keyboard",
+                    description="Package tracking has not updated since dispatch.",
+                    category=TicketCategory.DELIVERY,
+                    status=TicketStatus.OPEN,
+                    priority=TicketPriority.MEDIUM,
+                )
+                session.add(t3)
+                session.flush()
+
+                msg_t3_1 = Message(
+                    ticket_id=t3.id,
+                    sender_type=SenderType.CUSTOMER,
+                    sender_id=cust2.id,
+                    content="Hello, my package was marked shipped 4 days ago but the tracking link shows no scans yet.",
+                )
+                session.add(msg_t3_1)
 
         session.commit()
-        print("\n✅ Database seed completed successfully!")
+        print("\nDatabase seed completed successfully.")
         print("--------------------------------------------------")
         print("Demo Users Created:")
-        print(f"  • Customer 1: customer1@example.com (Password: {demo_password})")
-        print(f"  • Customer 2: customer2@example.com (Password: {demo_password})")
-        print(f"  • Support Agent: agent1@example.com (Password: {demo_password})")
-        print(f"  • Admin: admin@example.com (Password: {demo_password})")
+        print(f"  * Customer 1: customer1@example.com (Password: {demo_password})")
+        print(f"  * Customer 2: customer2@example.com (Password: {demo_password})")
+        print(f"  * Support Agent: agent1@example.com (Password: {demo_password})")
+        print(f"  * Admin: admin1@example.com (Password: {demo_password})")
         print("--------------------------------------------------")
         print("Orders Created:")
-        print("  • Order A: delivered 5 days ago (1,299 INR, Electronics) - Eligible refund")
-        print("  • Order B: delivered 45 days ago (2,499 INR, Fashion) - Window expired")
-        print("  • Order C: delivered 3 days ago (8,999 INR, Electronics) - Escalation (>5,000)")
-        print("  • Order D: shipped (799 INR, Home) - Not refundable yet")
-        print("  • Order E: delivered 10 days ago (1,599 INR, Fashion) - Already PROCESSED refund")
-        print("  • Order F: delivered 4 days ago (1,999 INR, Electronics) - Customer 2 order")
-        print("  • Order G: delivered 2 days ago (450 INR, Grocery) - Non-returnable grocery")
+        print("  * Order A: delivered 5 days ago (1,299 INR, Electronics) - Eligible refund")
+        print("  * Order B: delivered 45 days ago (2,499 INR, Fashion) - Window expired")
+        print("  * Order C: delivered 3 days ago (8,999 INR, Electronics) - Escalation (>5,000)")
+        print("  * Order D: shipped (799 INR, Home) - Not refundable yet")
+        print("  * Order E: delivered 10 days ago (1,599 INR, Fashion) - Already PROCESSED refund")
+        print("  * Order F: delivered 4 days ago (1,999 INR, Electronics) - Customer 2 order")
+        print("  * Order G: delivered 2 days ago (450 INR, Grocery) - Non-returnable grocery")
         print("--------------------------------------------------\n")
 
     except Exception as exc:
         session.rollback()
-        print(f"❌ Database seed failed: {exc}")
+        print(f"Database seed failed: {exc}")
         raise
     finally:
         if owns_session:

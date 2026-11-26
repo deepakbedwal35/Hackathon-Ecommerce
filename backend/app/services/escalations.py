@@ -74,6 +74,7 @@ def list_staff_escalations(
         .join(User, Ticket.customer_id == User.id)
         .options(
             selectinload(Escalation.ticket).selectinload(Ticket.customer),
+            selectinload(Escalation.ticket).selectinload(Ticket.order),
             selectinload(Escalation.refund),
         )
     )
@@ -124,6 +125,7 @@ def list_staff_escalations(
                 customer_id=esc.ticket.customer_id if esc.ticket else uuid.uuid4(),
                 customer_name=esc.ticket.customer.name if (esc.ticket and esc.ticket.customer) else "Customer",
                 order_id=esc.ticket.order_id if esc.ticket else None,
+                order_number=esc.ticket.order.order_number if (esc.ticket and esc.ticket.order) else None,
                 amount=esc.refund.amount if esc.refund else None,
                 priority=esc.priority,
                 decision=esc.decision,
@@ -170,6 +172,7 @@ def get_staff_escalation_detail(db: Session, escalation_id: uuid.UUID) -> StaffE
 
         order_read = StaffOrderRead(
             id=ticket.order.id,
+            order_number=ticket.order.order_number,
             status=ticket.order.status,
             total_amount=ticket.order.total_amount,
             delivery_date=ticket.order.delivery_date,
@@ -353,6 +356,13 @@ def decide_staff_escalation(
             code="ALREADY_DECIDED",
             message="This escalation has already been decided.",
             status_code=409,
+        )
+
+    if decision in ("approve", "reject") and staff_user.role != UserRole.ADMIN:
+        raise AppError(
+            code="FORBIDDEN",
+            message="Only administrators can approve or reject escalated refunds.",
+            status_code=403,
         )
 
     # 1. APPROVE path

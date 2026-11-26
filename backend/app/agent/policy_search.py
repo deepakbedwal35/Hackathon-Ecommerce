@@ -1,16 +1,37 @@
+from decimal import Decimal
 import os
 import re
 from pathlib import Path
 
+from app.core.config import settings
+
 _POLICY_FILE_PATH = Path(__file__).resolve().parent / "policy.md"
 
 
+def get_refund_review_policy_text() -> str:
+    mode = getattr(settings, "REFUND_REVIEW_MODE", "above_limit").lower()
+    if mode == "all":
+        return "Every refund is reviewed and approved by our team before it is issued."
+    limit_fmt = f"{Decimal(settings.AUTO_REFUND_LIMIT):,.0f}" if float(settings.AUTO_REFUND_LIMIT).is_integer() else f"{Decimal(settings.AUTO_REFUND_LIMIT):,.2f}"
+    return f"Refunds above INR {limit_fmt} are reviewed by our team."
+
+
 def get_policy_text() -> str:
-    """Reads the static policy markdown file."""
+    """Reads the static policy markdown file and renders dynamic rules."""
     if not _POLICY_FILE_PATH.exists():
         return ""
     with open(_POLICY_FILE_PATH, "r", encoding="utf-8") as f:
-        return f.read()
+        content = f.read()
+
+    mode = getattr(settings, "REFUND_REVIEW_MODE", "above_limit").lower()
+    rule = get_refund_review_policy_text()
+    if mode == "all":
+        content = re.sub(
+            r"## High-value refunds\n[^\n#]+",
+            f"## High-value refunds\n{rule}",
+            content,
+        )
+    return content
 
 
 def get_all_policy_sections() -> dict[str, str]:

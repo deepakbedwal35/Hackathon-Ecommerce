@@ -1,10 +1,11 @@
 import React from "react";
-import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { AuthProvider } from "./context/AuthContext";
 import { Layout } from "./components/Layout";
+import { StaffLayout } from "./components/staff/StaffLayout";
 import { ProtectedRoute } from "./components/ProtectedRoute";
 
-// Pages
+// Customer & Public Pages
 import { Login } from "./pages/Login";
 import { Register } from "./pages/Register";
 import { Dashboard } from "./pages/Dashboard";
@@ -17,23 +18,45 @@ import { Privacy } from "./pages/Privacy";
 import { Terms } from "./pages/Terms";
 import { NotFound } from "./pages/NotFound";
 
+// Staff Pages
+import { Overview } from "./pages/staff/Overview";
+import { StaffTickets } from "./pages/staff/StaffTickets";
+import { StaffTicketDetail } from "./pages/staff/StaffTicketDetail";
+import { Approvals } from "./pages/staff/Approvals";
+import { ApprovalDetail } from "./pages/staff/ApprovalDetail";
+
 export default function App() {
   return (
     <BrowserRouter>
       <AuthProvider>
-        <Layout>
-          <Routes>
-            {/* Public routes */}
+        <Routes>
+          {/* Staff routes */}
+          <Route
+            path="/staff"
+            element={
+              <ProtectedRoute allowedRoles={["agent", "admin"]}>
+                <StaffLayout />
+              </ProtectedRoute>
+            }
+          >
+            <Route index element={<Overview />} />
+            <Route path="tickets" element={<StaffTickets />} />
+            <Route path="tickets/:ticketId" element={<StaffTicketDetail />} />
+            <Route path="approvals" element={<Approvals />} />
+            <Route path="approvals/:escalationId" element={<ApprovalDetail />} />
+          </Route>
+
+          {/* Customer & public routes */}
+          <Route element={<Layout />}>
             <Route path="/login" element={<Login />} />
             <Route path="/register" element={<Register />} />
             <Route path="/privacy" element={<Privacy />} />
             <Route path="/terms" element={<Terms />} />
 
-            {/* Protected Customer routes */}
             <Route
               path="/"
               element={
-                <ProtectedRoute>
+                <ProtectedRoute allowedRoles={["customer"]}>
                   <Dashboard />
                 </ProtectedRoute>
               }
@@ -41,7 +64,7 @@ export default function App() {
             <Route
               path="/orders"
               element={
-                <ProtectedRoute>
+                <ProtectedRoute allowedRoles={["customer"]}>
                   <Orders />
                 </ProtectedRoute>
               }
@@ -49,7 +72,7 @@ export default function App() {
             <Route
               path="/orders/:orderId"
               element={
-                <ProtectedRoute>
+                <ProtectedRoute allowedRoles={["customer"]}>
                   <OrderDetail />
                 </ProtectedRoute>
               }
@@ -57,7 +80,7 @@ export default function App() {
             <Route
               path="/tickets"
               element={
-                <ProtectedRoute>
+                <ProtectedRoute allowedRoles={["customer"]}>
                   <Tickets />
                 </ProtectedRoute>
               }
@@ -65,7 +88,7 @@ export default function App() {
             <Route
               path="/tickets/new"
               element={
-                <ProtectedRoute>
+                <ProtectedRoute allowedRoles={["customer"]}>
                   <NewTicket />
                 </ProtectedRoute>
               }
@@ -73,16 +96,14 @@ export default function App() {
             <Route
               path="/tickets/:ticketId"
               element={
-                <ProtectedRoute>
+                <ProtectedRoute allowedRoles={["customer"]}>
                   <TicketChat />
                 </ProtectedRoute>
               }
             />
-
-            {/* 404 Route */}
             <Route path="*" element={<NotFound />} />
-          </Routes>
-        </Layout>
+          </Route>
+        </Routes>
       </AuthProvider>
     </BrowserRouter>
   );

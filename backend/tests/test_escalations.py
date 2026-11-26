@@ -48,7 +48,7 @@ def _get_order_by_amount(db: Session, amount: Decimal) -> Order:
 def test_escalation_assignment_rules(client: TestClient, db_session: Session) -> None:
     cust1 = _get_user_by_email(db_session, "customer1@example.com")
     agent = _get_user_by_email(db_session, "agent1@example.com")
-    admin = _get_user_by_email(db_session, "admin@example.com")
+    admin = _get_user_by_email(db_session, "admin1@example.com") or _get_user_by_email(db_session, "admin@example.com")
     order_c = _get_order_by_amount(db_session, Decimal("8999.00"))
 
     # Customer triggers an escalation on Order C
@@ -104,7 +104,7 @@ def test_escalation_assignment_rules(client: TestClient, db_session: Session) ->
 
 def test_escalation_approve_happy_path(client: TestClient, db_session: Session) -> None:
     cust1 = _get_user_by_email(db_session, "customer1@example.com")
-    agent = _get_user_by_email(db_session, "agent1@example.com")
+    admin = _get_user_by_email(db_session, "admin1@example.com") or _get_user_by_email(db_session, "admin@example.com")
     order_c = _get_order_by_amount(db_session, Decimal("8999.00"))
 
     res_esc = request_refund(
@@ -120,7 +120,7 @@ def test_escalation_approve_happy_path(client: TestClient, db_session: Session) 
     # Approve decision
     response = client.post(
         f"/api/v1/staff/escalations/{escalation_id}/decision",
-        headers=_auth_header(agent),
+        headers=_auth_header(admin),
         json={
             "decision": "approve",
             "note": "Approved refund after reviewing courier damage report.",
@@ -145,7 +145,7 @@ def test_escalation_approve_happy_path(client: TestClient, db_session: Session) 
     # Calling decision again -> 409 ALREADY_DECIDED
     res_dup = client.post(
         f"/api/v1/staff/escalations/{escalation_id}/decision",
-        headers=_auth_header(agent),
+        headers=_auth_header(admin),
         json={"decision": "approve", "note": "Duplicate approval attempt."},
     )
     assert res_dup.status_code == 409
@@ -154,7 +154,7 @@ def test_escalation_approve_happy_path(client: TestClient, db_session: Session) 
 
 def test_concurrent_approvals_only_one_succeeds(setup_test_postgres, db_session: Session) -> None:
     cust1 = _get_user_by_email(db_session, "customer1@example.com")
-    agent = _get_user_by_email(db_session, "agent1@example.com")
+    admin = _get_user_by_email(db_session, "admin1@example.com") or _get_user_by_email(db_session, "admin@example.com")
     order_c = _get_order_by_amount(db_session, Decimal("8999.00"))
 
     res_esc = request_refund(
@@ -173,7 +173,7 @@ def test_concurrent_approvals_only_one_succeeds(setup_test_postgres, db_session:
         with TestClient(app) as test_client:
             return test_client.post(
                 f"/api/v1/staff/escalations/{escalation_id}/decision",
-                headers=_auth_header(agent),
+                headers=_auth_header(admin),
                 json={"decision": "approve", "note": f"Concurrent worker {worker_id} note"},
             )
 
@@ -196,7 +196,7 @@ def test_concurrent_approvals_only_one_succeeds(setup_test_postgres, db_session:
 
 def test_approve_after_order_refundable_amount_shrank(client: TestClient, db_session: Session) -> None:
     cust1 = _get_user_by_email(db_session, "customer1@example.com")
-    agent = _get_user_by_email(db_session, "agent1@example.com")
+    admin = _get_user_by_email(db_session, "admin1@example.com") or _get_user_by_email(db_session, "admin@example.com")
     order_c = _get_order_by_amount(db_session, Decimal("8999.00"))
 
     res_esc = request_refund(
@@ -215,7 +215,7 @@ def test_approve_after_order_refundable_amount_shrank(client: TestClient, db_ses
     # Attempt approve -> 409
     res = client.post(
         f"/api/v1/staff/escalations/{escalation_id}/decision",
-        headers=_auth_header(agent),
+        headers=_auth_header(admin),
         json={"decision": "approve", "note": "Approving when balance reduced"},
     )
     assert res.status_code == 409
@@ -229,7 +229,7 @@ def test_approve_after_order_refundable_amount_shrank(client: TestClient, db_ses
 
 def test_approve_payment_fail_mode_and_retry(client: TestClient, db_session: Session) -> None:
     cust1 = _get_user_by_email(db_session, "customer1@example.com")
-    agent = _get_user_by_email(db_session, "agent1@example.com")
+    admin = _get_user_by_email(db_session, "admin1@example.com") or _get_user_by_email(db_session, "admin@example.com")
     order_c = _get_order_by_amount(db_session, Decimal("8999.00"))
 
     res_esc = request_refund(
@@ -247,7 +247,7 @@ def test_approve_payment_fail_mode_and_retry(client: TestClient, db_session: Ses
 
     res_fail = client.post(
         f"/api/v1/staff/escalations/{escalation_id}/decision",
-        headers=_auth_header(agent),
+        headers=_auth_header(admin),
         json={"decision": "approve", "note": "Approved, testing gateway drop."},
     )
     assert res_fail.status_code == 502
@@ -263,7 +263,7 @@ def test_approve_payment_fail_mode_and_retry(client: TestClient, db_session: Ses
 
     res_retry = client.post(
         f"/api/v1/staff/escalations/{escalation_id}/decision",
-        headers=_auth_header(agent),
+        headers=_auth_header(admin),
         json={"decision": "approve", "note": "Retrying after rails restored."},
     )
     assert res_retry.status_code == 200
@@ -283,7 +283,7 @@ def test_approve_payment_fail_mode_and_retry(client: TestClient, db_session: Ses
 
 def test_escalation_reject_flow(client: TestClient, db_session: Session) -> None:
     cust1 = _get_user_by_email(db_session, "customer1@example.com")
-    agent = _get_user_by_email(db_session, "agent1@example.com")
+    admin = _get_user_by_email(db_session, "admin1@example.com") or _get_user_by_email(db_session, "admin@example.com")
     order_c = _get_order_by_amount(db_session, Decimal("8999.00"))
 
     res_esc = request_refund(
@@ -299,7 +299,7 @@ def test_escalation_reject_flow(client: TestClient, db_session: Session) -> None
     # Missing message_to_customer -> 422 VALIDATION_ERROR
     res_bad = client.post(
         f"/api/v1/staff/escalations/{escalation_id}/decision",
-        headers=_auth_header(agent),
+        headers=_auth_header(admin),
         json={"decision": "reject", "note": "Internal reason: physical damage by user"},
     )
     assert res_bad.status_code == 422
@@ -308,7 +308,7 @@ def test_escalation_reject_flow(client: TestClient, db_session: Session) -> None
     # Reject with note and explanation message
     res_rej = client.post(
         f"/api/v1/staff/escalations/{escalation_id}/decision",
-        headers=_auth_header(agent),
+        headers=_auth_header(admin),
         json={
             "decision": "reject",
             "note": "Internal note: Physical impact marks detected near corner mount.",
@@ -393,9 +393,10 @@ def test_request_info_and_customer_reply_cycle(client: TestClient, db_session: S
     assert str(escalation_id) in queue_ids
 
     # Staff can now approve
+    admin = _get_user_by_email(db_session, "admin1@example.com") or _get_user_by_email(db_session, "admin@example.com")
     res_app = client.post(
         f"/api/v1/staff/escalations/{escalation_id}/decision",
-        headers=_auth_header(agent),
+        headers=_auth_header(admin),
         json={"decision": "approve", "note": "Outer box shows carrier damage. Approved."},
     )
     assert res_app.status_code == 200

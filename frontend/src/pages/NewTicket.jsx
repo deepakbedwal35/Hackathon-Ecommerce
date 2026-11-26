@@ -1,31 +1,38 @@
 import React, { useEffect, useState } from "react";
 import { useNavigate, Link, useSearchParams } from "react-router-dom";
 import { api } from "../api/client.js";
+import { useMetaEnums } from "../hooks/useMeta.js";
 import { LoadingSpinner } from "../components/LoadingSpinner.jsx";
 import { InlineAlert } from "../components/InlineAlert.jsx";
 import { IconArrowLeft } from "../components/Icons.jsx";
-
-const CATEGORIES = [
-  { value: "refund_request", label: "Refund request" },
-  { value: "return_request", label: "Return inquiry" },
-  { value: "order_inquiry", label: "Order tracking or status" },
-  { value: "cancellation", label: "Order cancellation" },
-  { value: "account", label: "Account or login issue" },
-  { value: "other", label: "Other inquiry" },
-];
 
 export function NewTicket() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const preselectedOrderId = searchParams.get("order_id") || "";
 
+  const {
+    enums,
+    loading: enumsLoading,
+    error: enumsError,
+    refetch: refetchEnums,
+  } = useMetaEnums();
+
+  const categories = enums?.ticket_categories || [];
+
   const [orders, setOrders] = useState([]);
   const [subject, setSubject] = useState("");
-  const [category, setCategory] = useState("order_inquiry");
+  const [category, setCategory] = useState("");
   const [selectedOrderId, setSelectedOrderId] = useState(preselectedOrderId);
   const [description, setDescription] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState(null);
+
+  useEffect(() => {
+    if (categories.length > 0 && !category) {
+      setCategory(categories[0].value);
+    }
+  }, [categories, category]);
 
   useEffect(() => {
     async function fetchOrders() {
@@ -33,7 +40,7 @@ export function NewTicket() {
         const data = await api.orders.list();
         setOrders(data);
       } catch {
-        // Optional failure, order list is non-critical
+        // Order dropdown is optional for general inquiries
       }
     }
     fetchOrders();
@@ -42,6 +49,11 @@ export function NewTicket() {
   async function handleSubmit(e) {
     e.preventDefault();
     setError(null);
+
+    if (!category) {
+      setError("Please select a ticket category.");
+      return;
+    }
 
     if (!subject.trim()) {
       setError("Please provide a subject for your ticket.");
@@ -91,6 +103,23 @@ export function NewTicket() {
           </p>
         </div>
 
+        {enumsError && (
+          <div className="mb-4">
+            <InlineAlert type="error" title="Unable to load categories">
+              <div className="flex items-center justify-between">
+                <span>{enumsError}</span>
+                <button
+                  type="button"
+                  onClick={refetchEnums}
+                  className="font-medium underline hover:text-rose-950 ml-4"
+                >
+                  Retry
+                </button>
+              </div>
+            </InlineAlert>
+          </div>
+        )}
+
         {error && (
           <div className="mb-4">
             <InlineAlert type="error" title="Submission error" message={error} />
@@ -128,14 +157,21 @@ export function NewTicket() {
               <select
                 id="category"
                 value={category}
+                disabled={enumsLoading || Boolean(enumsError) || categories.length === 0}
                 onChange={(e) => setCategory(e.target.value)}
-                className="w-full px-3 py-2 text-sm border border-slate-300 rounded-md bg-white text-slate-900 focus:border-teal-700 focus:outline-none"
+                className="w-full px-3 py-2 text-sm border border-slate-300 rounded-md bg-white text-slate-900 focus:border-teal-700 focus:outline-none disabled:bg-slate-100 disabled:text-slate-400"
               >
-                {CATEGORIES.map((c) => (
-                  <option key={c.value} value={c.value}>
-                    {c.label}
-                  </option>
-                ))}
+                {enumsLoading ? (
+                  <option value="">Loading categories...</option>
+                ) : enumsError ? (
+                  <option value="">Unavailable</option>
+                ) : (
+                  categories.map((c) => (
+                    <option key={c.value} value={c.value}>
+                      {c.label}
+                    </option>
+                  ))
+                )}
               </select>
             </div>
 
@@ -190,7 +226,7 @@ export function NewTicket() {
             </Link>
             <button
               type="submit"
-              disabled={submitting}
+              disabled={submitting || enumsLoading || Boolean(enumsError) || categories.length === 0}
               className="flex items-center justify-center gap-2 px-4 py-2 text-sm font-medium text-white bg-teal-700 hover:bg-teal-800 disabled:bg-slate-300 rounded-md transition-colors"
             >
               {submitting ? (

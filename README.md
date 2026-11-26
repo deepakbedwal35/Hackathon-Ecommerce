@@ -102,15 +102,15 @@ All accounts share the default demo password: `LocalDevDemo123!` (or value from 
 | :--- | :--- | :--- |
 | **Customer 1** | `customer1@example.com` | Own orders & tickets only |
 | **Customer 2** | `customer2@example.com` | Own orders & tickets only |
-| **Support Agent** | `agent1@example.com` | View all customer tickets & orders, handle refunds |
-| **System Admin** | `admin@example.com` | Global platform administration |
+| **Support Agent** | `agent1@example.com` | View all customer tickets & orders, request info, add internal notes |
+| **System Admin** | `admin1@example.com` | Full staff permissions plus approve/reject refunds and reassign escalations |
 
 #### Authorizing in Swagger UI (`/docs`)
 
 1. Open [http://localhost:8000/docs](http://localhost:8000/docs)
 2. Send a `POST /api/v1/auth/login` request with e.g. `customer1@example.com` and `LocalDevDemo123!`.
 3. Copy the returned `access_token` string.
-4. Click the green **Authorize 🔓** button in the top right of the Swagger UI.
+4. Click the green **Authorize** button in the top right of the Swagger UI.
 5. In the **HTTPBearer (http, Bearer)** input box, paste the token and click **Authorize**.
 6. All subsequent requests (e.g. `GET /api/v1/auth/me`) will automatically include the `Authorization: Bearer <token>` header.
 
@@ -172,19 +172,43 @@ Visit [http://localhost:5173](http://localhost:5173) to view the development ser
 | `GET` | `/api/v1/tickets/{id}/messages` | Customer | List customer-visible messages on ticket |
 | `POST` | `/api/v1/tickets/{id}/messages` | Customer | Reply to ticket; auto-reopens `more_info_requested` |
 
+### Public Meta Configuration (`/api/v1/meta`)
+| Method | Path | Auth | Description |
+| :--- | :--- | :--- | :--- |
+| `GET` | `/api/v1/meta/enums` | Public | Single source of truth for ticket, order, refund, and escalation enums |
+| `GET` | `/api/v1/meta/config` | Public | Public policy configuration (`refund_review_mode`, `auto_refund_limit`, `return_window_days`) |
+
 ### Staff Operations & Dashboard (`/api/v1/staff`)
 | Method | Path | Auth | Description |
 | :--- | :--- | :--- | :--- |
+| `GET` | `/api/v1/staff/overview` | Staff | Ticket counts by status, queue depths, pending total, and top 5 queues |
 | `GET` | `/api/v1/staff/tickets` | Staff | Paginated ticket queue with SLA sort & search |
-| `GET` | `/api/v1/staff/tickets/{id}` | Staff | Full ticket context (order, refunds, notes, escalations) |
+| `GET` | `/api/v1/staff/tickets/{id}` | Staff | Full ticket context (order, refunds, notes, escalations, `allowed_transitions`) |
 | `PATCH` | `/api/v1/staff/tickets/{id}` | Staff | Transition ticket status/priority with strict invariants |
+| `GET` | `/api/v1/staff/tickets/{id}/messages` | Staff | List all messages on ticket with optional `after` timestamp cursor |
 | `POST` | `/api/v1/staff/tickets/{id}/messages`| Staff | Post customer-visible staff reply on ticket |
 | `GET` | `/api/v1/staff/tickets/{id}/notes` | Staff | List internal, staff-only notes on ticket |
 | `POST` | `/api/v1/staff/tickets/{id}/notes` | Staff | Append internal note to ticket (audit tracked) |
 | `GET` | `/api/v1/staff/escalations` | Staff | Paginated escalation queue with SLA priority sort |
 | `GET` | `/api/v1/staff/escalations/{id}` | Staff | Full escalation context with passed verification checks |
 | `POST` | `/api/v1/staff/escalations/{id}/assign` | Staff | Assign escalation (agent to self, admin to any staff) |
-| `POST` | `/api/v1/staff/escalations/{id}/decision` | Staff | Approve refund, reject with explanation, or request info |
+| `POST` | `/api/v1/staff/escalations/{id}/decision` | Staff | Approve/reject (admin only) or request info (agent or admin) |
+
+---
+
+## Refund Review Modes & Role Permissions
+
+Configured via `REFUND_REVIEW_MODE`:
+- `above_limit` (default): Eligible refunds at or below `AUTO_REFUND_LIMIT` (5,000.00 INR) auto-process; amounts strictly above escalate for admin review.
+- `all`: Every policy-eligible refund request escalates to human review before any money moves; expired or non-returnable orders still reject immediately without escalating.
+
+| Action | Customer | Support Agent | Admin |
+| :--- | :---: | :---: | :---: |
+| View all customer tickets & escalations | No (403) | Yes | Yes |
+| Reply to tickets & add internal notes | Own tickets only | Yes | Yes |
+| Request more info on an escalation | No (403) | Yes | Yes |
+| Assign escalation | No (403) | Self only | Any staff user |
+| Approve or reject escalated refund | No (403) | No (403) | Yes |
 
 ---
 

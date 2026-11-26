@@ -33,12 +33,12 @@ flowchart TD
     S7 -- "Valid Balance" --> S8{"Step 8: Active Refund Check\nPending or Approved?"}
     
     S8 -- "Active Exists" --> R_Active["REJECTED: ACTIVE_REFUND_EXISTS (409)"]
-    S8 -- "None Active" --> S9{"Step 9: Threshold Check\nAmount > 5000.00 INR?"}
+    S8 -- "None Active" --> S9{"Step 9: Review Check\nmode == 'all' OR Amount > 5000.00 INR?"}
     
-    S9 -- "Yes (> 5000.00)" --> Escalate["Step 9: Escalation Path\n- Status = pending_review\n- Create Escalation (high priority)\n- Escalate Support Ticket\n- Audit: refund.escalated"]
+    S9 -- "Yes" --> Escalate["Step 9: Escalation Path\n- Status = pending_review\n- Create Escalation (high priority)\n- Escalate Support Ticket\n- Audit: refund.escalated"]
     Escalate --> R_Escalated["ESCALATED (202)\nNo payment dispatched"]
     
-    S9 -- "No (<= 5000.00)" --> S10["Step 10: Auto-Approval Path\n- Insert refund (approved)\n- Audit: refund.requested\n- COMMIT transaction"]
+    S9 -- "No (above_limit mode & <= 5000.00)" --> S10["Step 10: Auto-Approval Path\n- Insert refund (approved)\n- Audit: refund.requested\n- COMMIT transaction"]
     S10 --> PaymentMock["Execute Mock Payment\n(execute_refund_payment)"]
     PaymentMock -- "Failure" --> RetryPayment["Retry Payment (1 safe retry)"]
     RetryPayment -- "Failed" --> S10_Fail["Set status = failed\nSave failure_reason\nAudit: refund.failed"]
@@ -54,7 +54,7 @@ flowchart TD
 ## 2. Core Security & Concurrency Invariants
 
 1. **Single Execution Path**:
-   All refunds—whether initiated by a customer, triggered by an AI agent, or reviewed and approved by human staff—execute through the exact same backend engine in `app/services/refunds.py`. No endpoint or background task may bypass policy checks, insert unvalidated refund rows, or directly invoke payment rails.
+   All refunds, whether initiated by a customer, triggered by an AI agent, or reviewed and approved by an admin, execute through the exact same backend engine in `app/services/refunds.py`. No endpoint or background task may bypass policy checks, insert unvalidated refund rows, or directly invoke payment rails.
 
 2. **Row-Level Serialization (`SELECT ... FOR UPDATE`)**:
    Every refund evaluation begins by acquiring an exclusive row lock on the target `Order`. This serializes all concurrent requests for the same order, guaranteeing that balance calculations (`order.total_amount - SUM(active_refunds)`) remain atomic and immune to race-condition double-spending.
@@ -111,6 +111,24 @@ stateDiagram-v2
 ```
 
 ### Invariants for Human Reviews:
-1. **Decision Eligibility**: Staff can only approve or reject an escalation when its current decision is `pending` or `more_info_requested`. Once decided (`approved` or `rejected`), subsequent decision attempts return HTTP 409 `ALREADY_DECIDED`.
-2. **Atomic Payment Execution**: When approving, `approve_escalated_refund` re-checks the order's delivered status and refundable balance. If the payment gateway fails, the refund status is set to `failed` while the escalation decision remains open in `pending` to allow staff to retry without spawning duplicate refund rows.
+1. **Decision Eligibility & Admin Authority**: Escalations can only be decided when `decision` is `pending` or `more_info_requested`. Once decided (`approved` or `rejected`), subsequent decision attempts return HTTP 409 `ALREADY_DECIDED`. Approving or rejecting a refund strictly requires the `admin` role (`agent` receives HTTP 403 `FORBIDDEN`).
+2. **Atomic Payment Execution**: When approving, `approve_escalated_refund` re-checks the order's delivered status and refundable balance. If the payment gateway fails, the refund status is set to `failed` while the escalation decision remains open in `pending` to allow an admin to retry without spawning duplicate refund rows.
 3. **Customer Reply Cycle**: When a customer responds to a ticket marked `awaiting_customer` whose escalation is `more_info_requested`, the system automatically shifts the escalation back to `pending` and the ticket to `open`, queuing it for staff review.
+
+---
+
+## 5. Review Modes & Role Decision Matrix
+
+### Refund Review Modes (`REFUND_REVIEW_MODE`)
+1. `above_limit` (default): Eligible requests up to `AUTO_REFUND_LIMIT` (5,000.00 INR) auto-process in Step 10; amounts strictly above escalate in Step 9.
+2. `all`: Every policy-eligible request escalates in Step 9 (`pending_review`) and requires explicit admin approval before payment executes. Policy rejections (expired window, undelivered, non-returnable category, invalid amount, or ownership failures) still reject immediately without creating an escalation.
+
+### Role Decision Permissions & New Endpoints
+| Action / Endpoint | Customer | Support Agent | Admin |
+| :--- | :---: | :---: | :---: |
+| `GET /api/v1/meta/enums`, `/api/v1/meta/config` | Public | Public | Public |
+| `GET /api/v1/staff/overview` | 403 | 200 | 200 |
+| `GET /api/v1/staff/tickets/{id}/messages` | 403 | 200 | 200 |
+| `POST /api/v1/staff/escalations/{id}/assign` | 403 | Self only | Any staff |
+| `POST /api/v1/staff/escalations/{id}/decision` (`request_info`) | 403 | 200 | 200 |
+| `POST /api/v1/staff/escalations/{id}/decision` (`approve` / `reject`) | 403 | 403 | 200 |

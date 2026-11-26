@@ -1,6 +1,6 @@
 // HTTP client for backend API communication with AppError parsing and network handling
 
-const BASE_URL = import.meta.env.VITE_API_BASE_URL || "";
+const BASE_URL = (import.meta.env && import.meta.env.VITE_API_BASE_URL) || "";
 
 export const TOKEN_STORAGE_KEY = "apex_auth_token";
 
@@ -250,6 +250,98 @@ export const api = {
       const res = await request(`/api/v1/tickets/${ticketId}/messages`, {
         method: "POST",
         body: { content },
+      });
+      return res.data;
+    },
+  },
+
+  meta: {
+    async enums() {
+      const res = await request("/api/v1/meta/enums", { method: "GET" });
+      return res.data;
+    },
+    async config() {
+      const res = await request("/api/v1/meta/config", { method: "GET" });
+      return res.data;
+    },
+  },
+
+  staff: {
+    async overview() {
+      const res = await request("/api/v1/staff/overview", { method: "GET" });
+      return res.data;
+    },
+    async listTickets(params = {}) {
+      const query = new URLSearchParams();
+      Object.entries(params).forEach(([k, v]) => {
+        if (v !== undefined && v !== null && v !== "") {
+          query.set(k, v);
+        }
+      });
+      const qs = query.toString();
+      const res = await request(`/api/v1/staff/tickets${qs ? `?${qs}` : ""}`, { method: "GET" });
+      return res.data;
+    },
+    async getTicket(ticketId) {
+      const res = await request(`/api/v1/staff/tickets/${ticketId}`, { method: "GET" });
+      return res.data;
+    },
+    async patchTicket(ticketId, payload) {
+      const res = await request(`/api/v1/staff/tickets/${ticketId}`, {
+        method: "PATCH",
+        body: payload,
+      });
+      return res.data;
+    },
+    async getMessages(ticketId, after = null) {
+      const qs = after ? `?after=${encodeURIComponent(after)}` : "";
+      const res = await request(`/api/v1/staff/tickets/${ticketId}/messages${qs}`, { method: "GET" });
+      return res.data;
+    },
+    async postMessage(ticketId, { content }) {
+      const res = await request(`/api/v1/staff/tickets/${ticketId}/messages`, {
+        method: "POST",
+        body: { content },
+      });
+      return res.data;
+    },
+    async getNotes(ticketId) {
+      const res = await request(`/api/v1/staff/tickets/${ticketId}/notes`, { method: "GET" });
+      return res.data;
+    },
+    async postNote(ticketId, { note }) {
+      const res = await request(`/api/v1/staff/tickets/${ticketId}/notes`, {
+        method: "POST",
+        body: { note },
+      });
+      return res.data;
+    },
+    async listEscalations(params = {}) {
+      const query = new URLSearchParams();
+      Object.entries(params).forEach(([k, v]) => {
+        if (v !== undefined && v !== null && v !== "") {
+          query.set(k, v);
+        }
+      });
+      const qs = query.toString();
+      const res = await request(`/api/v1/staff/escalations${qs ? `?${qs}` : ""}`, { method: "GET" });
+      return res.data;
+    },
+    async getEscalation(escalationId) {
+      const res = await request(`/api/v1/staff/escalations/${escalationId}`, { method: "GET" });
+      return res.data;
+    },
+    async assignEscalation(escalationId, assigneeId = null) {
+      const res = await request(`/api/v1/staff/escalations/${escalationId}/assign`, {
+        method: "POST",
+        body: { assignee_id: assigneeId },
+      });
+      return res.data;
+    },
+    async decideEscalation(escalationId, { decision, note, message_to_customer = null }) {
+      const res = await request(`/api/v1/staff/escalations/${escalationId}/decision`, {
+        method: "POST",
+        body: { decision, note, message_to_customer },
       });
       return res.data;
     },

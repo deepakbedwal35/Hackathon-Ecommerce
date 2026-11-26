@@ -41,7 +41,10 @@ from app.schemas.staff import (
     StaffOrderItemRead,
     StaffOrderRead,
     StaffOrderReturnWindow,
+    StaffOverviewRead,
     StaffPaginatedTickets,
+    StaffPendingApprovalItem,
+    StaffRecentTicketItem,
     StaffRefundRead,
     StaffTicketDetail,
     StaffTicketInfo,
@@ -101,6 +104,7 @@ def list_staff_tickets(
         .join(User, Ticket.customer_id == User.id)
         .options(
             selectinload(Ticket.customer),
+            selectinload(Ticket.order),
             selectinload(Ticket.escalations),
             selectinload(Ticket.refunds),
         )
@@ -197,8 +201,10 @@ def list_staff_tickets(
                 customer_id=t.customer_id,
                 customer_name=t.customer.name,
                 order_id=t.order_id,
+                order_number=t.order.order_number if t.order else None,
                 refund_summary=ref_summary,
                 has_pending_escalation=has_pending,
+                awaiting_admin_approval=has_pending,
                 created_at=t.created_at,
                 updated_at=t.updated_at,
             )
@@ -261,6 +267,7 @@ def get_staff_ticket_detail(db: Session, ticket_id: uuid.UUID) -> StaffTicketDet
 
         order_read = StaffOrderRead(
             id=ticket.order.id,
+            order_number=ticket.order.order_number,
             status=ticket.order.status,
             total_amount=ticket.order.total_amount,
             delivery_date=ticket.order.delivery_date,
@@ -344,6 +351,15 @@ def get_staff_ticket_detail(db: Session, ticket_id: uuid.UUID) -> StaffTicketDet
         updated_at=ticket.updated_at,
     )
 
+    has_pending_esc = any(
+        e.decision in (EscalationDecision.PENDING, EscalationDecision.MORE_INFO_REQUESTED)
+        for e in ticket.escalations
+    )
+    allowed = set(ALLOWED_TRANSITIONS.get(ticket.status, set()))
+    if has_pending_esc:
+        allowed -= {TicketStatus.RESOLVED, TicketStatus.CLOSED}
+    allowed_transitions = sorted(list(allowed), key=lambda s: s.value)
+
     return StaffTicketDetail(
         ticket=ticket_info,
         customer=StaffCustomerSummary(
@@ -356,6 +372,8 @@ def get_staff_ticket_detail(db: Session, ticket_id: uuid.UUID) -> StaffTicketDet
         escalations=escalations_list,
         messages=messages_list,
         notes=notes_list,
+        awaiting_admin_approval=has_pending_esc,
+        allowed_transitions=allowed_transitions,
     )
 
 
@@ -547,3 +565,160 @@ def add_staff_ticket_note(
     db.commit()
     db.refresh(ticket_note)
     return ticket_note
+
+
+def get_staff_overview(db: Session) -> StaffOverviewRead:
+    """
+    Computes dashboard overview statistics for staff in pure SQL.
+    Includes status distribution, queue depths, SLA aging, and top pending tasks.
+    """
+    # 1. Ticket counts by status in SQL
+    status_counts_rows = db.execute(
+        select(Ticket.status, func.count(Ticket.id)).group_by(Ticket.status)
+    ).all()
+    ticket_counts = {s.value: 0 for s in TicketStatus}
+    for st, count in status_counts_rows:
+        ticket_counts[st.value] = count
+
+    # 2. Awaiting approval count (pending escalations)
+    awaiting_approval_count = db.scalar(
+        select(func.count(Escalation.id)).where(
+            Escalation.decision.in_([
+                EscalationDecision.PENDING,
+                EscalationDecision.MORE_INFO_REQUESTED,
+            ])
+        )
+    ) or 0
+
+    # 3. Unassigned count
+    unassigned_count = db.scalar(
+        select(func.count(Escalation.id)).where(
+            Escalation.assigned_to.is_(None),
+            Escalation.decision.in_([
+                EscalationDecision.PENDING,
+                EscalationDecision.MORE_INFO_REQUESTED,
+            ]),
+        )
+    ) or 0
+
+    # 4. Oldest pending approval created_at
+    oldest_pending_approval_created_at = db.scalar(
+        select(func.min(Escalation.created_at)).where(
+            Escalation.decision == EscalationDecision.PENDING
+        )
+    )
+
+    # 5. Pending refund total (sum of amounts in pending_review)
+    pending_refund_total = db.scalar(
+        select(func.coalesce(func.sum(Refund.amount), Decimal("0.00"))).where(
+            Refund.status == RefundStatus.PENDING_REVIEW
+        )
+    ) or Decimal("0.00")
+
+    # 6. Top 5 pending approvals
+    esc_stmt = (
+        select(
+            Escalation.id.label("escalation_id"),
+            Escalation.ticket_id,
+            Ticket.order_id,
+            Order.order_number,
+            User.name.label("customer_name"),
+            func.coalesce(Refund.amount, Decimal("0.00")).label("amount"),
+            Escalation.priority,
+            Escalation.created_at,
+        )
+        .join(Ticket, Escalation.ticket_id == Ticket.id)
+        .join(User, Ticket.customer_id == User.id)
+        .outerjoin(Refund, Escalation.refund_id == Refund.id)
+        .outerjoin(Order, Ticket.order_id == Order.id)
+        .where(
+            Escalation.decision.in_([
+                EscalationDecision.PENDING,
+                EscalationDecision.MORE_INFO_REQUESTED,
+            ])
+        )
+        .order_by(PRIORITY_ORDER.asc(), Escalation.created_at.asc())
+        .limit(5)
+    )
+    esc_rows = db.execute(esc_stmt).all()
+    top_5_pending_approvals = [
+        StaffPendingApprovalItem(
+            escalation_id=row.escalation_id,
+            ticket_id=row.ticket_id,
+            order_id=row.order_id,
+            order_number=row.order_number,
+            customer_name=row.customer_name,
+            amount=row.amount,
+            priority=row.priority,
+            created_at=row.created_at,
+        )
+        for row in esc_rows
+    ]
+
+    # 7. Top 5 recent tickets
+    recent_stmt = (
+        select(
+            Ticket.id.label("ticket_id"),
+            Ticket.subject,
+            User.name.label("customer_name"),
+            Ticket.status,
+            Ticket.priority,
+            Ticket.created_at,
+        )
+        .join(User, Ticket.customer_id == User.id)
+        .order_by(Ticket.created_at.desc())
+        .limit(5)
+    )
+    recent_rows = db.execute(recent_stmt).all()
+    top_5_recent_tickets = [
+        StaffRecentTicketItem(
+            ticket_id=row.ticket_id,
+            subject=row.subject,
+            customer_name=row.customer_name,
+            status=row.status,
+            priority=row.priority,
+            created_at=row.created_at,
+        )
+        for row in recent_rows
+    ]
+
+    return StaffOverviewRead(
+        ticket_counts=ticket_counts,
+        awaiting_approval_count=awaiting_approval_count,
+        unassigned_count=unassigned_count,
+        oldest_pending_approval_created_at=oldest_pending_approval_created_at,
+        pending_refund_total=pending_refund_total,
+        top_5_pending_approvals=top_5_pending_approvals,
+        top_5_recent_tickets=top_5_recent_tickets,
+    )
+
+
+def list_staff_ticket_messages(
+    db: Session,
+    ticket_id: uuid.UUID,
+    after: datetime | None = None,
+) -> list[StaffMessageRead]:
+    """Lists messages for a ticket, with optional timestamp cursor filter."""
+    ticket = db.get(Ticket, ticket_id)
+    if not ticket:
+        raise AppError(code="NOT_FOUND", message="Ticket not found.", status_code=404)
+    stmt = (
+        select(Message)
+        .where(Message.ticket_id == ticket_id)
+    )
+    if after is not None:
+        stmt = stmt.where(Message.created_at > after)
+    stmt = stmt.order_by(Message.created_at.asc())
+    messages = db.scalars(stmt).all()
+    return [
+        StaffMessageRead(
+            id=m.id,
+            ticket_id=m.ticket_id,
+            sender_type=m.sender_type,
+            sender_id=m.sender_id,
+            content=m.content,
+            created_at=m.created_at,
+        )
+        for m in messages
+    ]
+

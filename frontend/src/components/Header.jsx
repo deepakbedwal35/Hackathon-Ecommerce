@@ -27,43 +27,60 @@ export function Header() {
 
           {isAuthenticated && (
             <nav className="hidden sm:flex items-center gap-1 text-xs font-medium">
-              <NavLink
-                to="/"
-                end
-                className={({ isActive }) =>
-                  `px-3 py-1.5 rounded-md transition-colors ${
-                    isActive
-                      ? "bg-slate-100 text-slate-900"
-                      : "text-slate-600 hover:text-slate-900 hover:bg-slate-50"
-                  }`
-                }
-              >
-                Dashboard
-              </NavLink>
-              <NavLink
-                to="/orders"
-                className={({ isActive }) =>
-                  `px-3 py-1.5 rounded-md transition-colors ${
-                    isActive
-                      ? "bg-slate-100 text-slate-900"
-                      : "text-slate-600 hover:text-slate-900 hover:bg-slate-50"
-                  }`
-                }
-              >
-                Orders
-              </NavLink>
-              <NavLink
-                to="/tickets"
-                className={({ isActive }) =>
-                  `px-3 py-1.5 rounded-md transition-colors ${
-                    isActive
-                      ? "bg-slate-100 text-slate-900"
-                      : "text-slate-600 hover:text-slate-900 hover:bg-slate-50"
-                  }`
-                }
-              >
-                Tickets
-              </NavLink>
+              {user?.role === "agent" || user?.role === "admin" ? (
+                <NavLink
+                  to="/staff"
+                  className={({ isActive }) =>
+                    `px-3 py-1.5 rounded-md transition-colors ${
+                      isActive
+                        ? "bg-slate-100 text-slate-900"
+                        : "text-slate-600 hover:text-slate-900 hover:bg-slate-50"
+                    }`
+                  }
+                >
+                  Staff dashboard
+                </NavLink>
+              ) : (
+                <>
+                  <NavLink
+                    to="/"
+                    end
+                    className={({ isActive }) =>
+                      `px-3 py-1.5 rounded-md transition-colors ${
+                        isActive
+                          ? "bg-slate-100 text-slate-900"
+                          : "text-slate-600 hover:text-slate-900 hover:bg-slate-50"
+                      }`
+                    }
+                  >
+                    Dashboard
+                  </NavLink>
+                  <NavLink
+                    to="/orders"
+                    className={({ isActive }) =>
+                      `px-3 py-1.5 rounded-md transition-colors ${
+                        isActive
+                          ? "bg-slate-100 text-slate-900"
+                          : "text-slate-600 hover:text-slate-900 hover:bg-slate-50"
+                      }`
+                    }
+                  >
+                    Orders
+                  </NavLink>
+                  <NavLink
+                    to="/tickets"
+                    className={({ isActive }) =>
+                      `px-3 py-1.5 rounded-md transition-colors ${
+                        isActive
+                          ? "bg-slate-100 text-slate-900"
+                          : "text-slate-600 hover:text-slate-900 hover:bg-slate-50"
+                      }`
+                    }
+                  >
+                    Tickets
+                  </NavLink>
+                </>
+              )}
             </nav>
           )}
         </div>

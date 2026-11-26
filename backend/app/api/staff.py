@@ -17,6 +17,7 @@ from app.schemas.staff import (
     StaffMessageRead,
     StaffNoteCreate,
     StaffNoteRead,
+    StaffOverviewRead,
     StaffPaginatedEscalations,
     StaffPaginatedTickets,
     StaffTicketDetail,
@@ -32,13 +33,28 @@ from app.services.escalations import (
 from app.services.staff_tickets import (
     add_staff_ticket_message,
     add_staff_ticket_note,
+    get_staff_overview,
     get_staff_ticket_detail,
+    list_staff_ticket_messages,
     list_staff_ticket_notes,
     list_staff_tickets,
     patch_staff_ticket,
 )
 
 router = APIRouter(tags=["Staff"])
+
+
+# ---------------------------------------------------------------------------
+# Staff Dashboard Overview
+# ---------------------------------------------------------------------------
+
+@router.get("/overview", response_model=StaffOverviewRead)
+def get_staff_dashboard_overview(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_staff),
+):
+    """Fetches high-level operational metrics and queues for the staff overview dashboard."""
+    return get_staff_overview(db=db)
 
 
 # ---------------------------------------------------------------------------
@@ -118,6 +134,17 @@ def patch_ticket(
         created_at=ticket.created_at,
         updated_at=ticket.updated_at,
     )
+
+
+@router.get("/tickets/{ticket_id}/messages", response_model=list[StaffMessageRead])
+def get_staff_messages(
+    ticket_id: uuid.UUID,
+    after: datetime | None = Query(None),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_staff),
+):
+    """Lists all ticket messages for staff, with optional timestamp cursor."""
+    return list_staff_ticket_messages(db=db, ticket_id=ticket_id, after=after)
 
 
 @router.post("/tickets/{ticket_id}/messages", response_model=StaffMessageRead, status_code=status.HTTP_201_CREATED)

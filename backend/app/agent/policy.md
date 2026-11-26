@@ -31,7 +31,7 @@ Perishable food items, beverages, organic teas, and grocery products are strictl
 Once a refund is approved and processed, funds are transferred back to the customer's original payment method. The refund appears in 5-7 business days depending on banking and card issuer settlement cycles.
 
 ## High-value refunds
-Refund requests for amounts strictly above INR 5,000.00 cannot be automatically approved by the automated system. Any refund or cumulative refund exceeding INR 5,000 requires human review by our specialist support staff. When a high-value refund is submitted, an escalation ticket is created and reviewed by staff before any funds can be disbursed.
+Refunds above INR 5,000 are reviewed by our team. Any refund or cumulative refund exceeding INR 5,000 requires human review by our specialist support staff. When a high-value refund is submitted, an escalation ticket is created and reviewed by staff before any funds can be disbursed.
 
 ## Already refunded orders
 An order or portion of an order that has already received a processed refund cannot be refunded again. If an order has been fully refunded, subsequent refund requests will be rejected immediately as already refunded.

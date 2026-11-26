@@ -1,7 +1,7 @@
 from fastapi import APIRouter, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api import auth, health, orders, refunds, staff, tickets
+from app.api import auth, health, meta, orders, refunds, staff, tickets
 from app.core.config import settings
 from app.core.errors import register_error_handlers
 from app.core.logging import setup_logging
@@ -47,6 +47,7 @@ def create_app() -> FastAPI:
     # API v1 router prefix for domain routes
     api_v1_router = APIRouter(prefix="/api/v1")
     api_v1_router.include_router(auth.router, prefix="/auth", tags=["Auth"])
+    api_v1_router.include_router(meta.router, prefix="/meta", tags=["Meta"])
     api_v1_router.include_router(orders.router, prefix="/orders", tags=["Customer Orders"])
     api_v1_router.include_router(refunds.router, prefix="/refunds", tags=["Refunds"])
     api_v1_router.include_router(staff.router, prefix="/staff", tags=["Staff"])

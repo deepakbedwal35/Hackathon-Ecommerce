@@ -17,6 +17,7 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
     RETURN_WINDOW_DAYS: int = 30
     AUTO_REFUND_LIMIT: str = "5000.00"
+    REFUND_REVIEW_MODE: str = "above_limit"
     PAYMENT_MOCK_MODE: str = "ok"
     NON_RETURNABLE_CATEGORIES: list[str] = ["grocery"]
     LLM_PROVIDER: str = "gemini"

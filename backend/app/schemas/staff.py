@@ -34,8 +34,10 @@ class StaffTicketListItem(BaseModel):
     customer_id: uuid.UUID
     customer_name: str
     order_id: uuid.UUID | None = None
+    order_number: str | None = None
     refund_summary: StaffTicketRefundSummary | None = None
     has_pending_escalation: bool = False
+    awaiting_admin_approval: bool = False
     created_at: datetime
     updated_at: datetime
 
@@ -75,6 +77,7 @@ class StaffOrderReturnWindow(BaseModel):
 
 class StaffOrderRead(BaseModel):
     id: uuid.UUID
+    order_number: str | None = None
     status: OrderStatus
     total_amount: Decimal
     delivery_date: date | None = None
@@ -158,6 +161,8 @@ class StaffTicketDetail(BaseModel):
     escalations: list[StaffEscalationSummary] = []
     messages: list[StaffMessageRead] = []
     notes: list[StaffNoteRead] = []
+    awaiting_admin_approval: bool = False
+    allowed_transitions: list[TicketStatus] = []
 
 
 class StaffTicketPatch(BaseModel):
@@ -187,6 +192,7 @@ class StaffEscalationListItem(BaseModel):
     customer_id: uuid.UUID
     customer_name: str
     order_id: uuid.UUID | None = None
+    order_number: str | None = None
     amount: Decimal | None = None
     priority: TicketPriority
     decision: EscalationDecision
@@ -234,3 +240,37 @@ class StaffEscalationDecision(BaseModel):
     message_to_customer: str | None = None
 
     model_config = ConfigDict(extra="forbid")
+
+
+class StaffPendingApprovalItem(BaseModel):
+    escalation_id: uuid.UUID
+    ticket_id: uuid.UUID | None = None
+    order_id: uuid.UUID | None = None
+    order_number: str | None = None
+    customer_name: str
+    amount: Decimal
+    priority: TicketPriority
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class StaffRecentTicketItem(BaseModel):
+    ticket_id: uuid.UUID
+    subject: str
+    customer_name: str
+    status: TicketStatus
+    priority: TicketPriority
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class StaffOverviewRead(BaseModel):
+    ticket_counts: dict[str, int]
+    awaiting_approval_count: int
+    unassigned_count: int
+    oldest_pending_approval_created_at: datetime | None = None
+    pending_refund_total: Decimal = Decimal("0.00")
+    top_5_pending_approvals: list[StaffPendingApprovalItem] = []
+    top_5_recent_tickets: list[StaffRecentTicketItem] = []

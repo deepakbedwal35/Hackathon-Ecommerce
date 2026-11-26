@@ -557,7 +557,7 @@ def test_db_failure_injected_mid_flow_no_false_success(seeded_db: Session, monke
 
 def test_staff_approve_escalated_refund_and_edge_cases(seeded_db: Session) -> None:
     cust1 = _get_user_by_email(seeded_db, "customer1@example.com")
-    agent = _get_user_by_email(seeded_db, "agent1@example.com")
+    admin = _get_user_by_email(seeded_db, "admin1@example.com")
     order_c = _get_order_by_amount(seeded_db, Decimal("8999.00"))
 
     # Customer creates an escalated refund (> 5000)
@@ -582,23 +582,23 @@ def test_staff_approve_escalated_refund_and_edge_cases(seeded_db: Session) -> No
     assert exc_cust.value.status_code == 403
     assert exc_cust.value.code == "FORBIDDEN"
 
-    # Staff agent approves -> PROCESSED
+    # Admin approves -> PROCESSED
     res_app = approve_escalated_refund(
         db=seeded_db,
-        staff_user=agent,
+        staff_user=admin,
         escalation_id=escalation_id,
         note="Approved replacement TV refund after inspecting photos",
     )
     assert res_app.outcome == Outcome.PROCESSED
     assert res_app.refund.status == RefundStatus.PROCESSED
-    assert res_app.refund.reviewed_by == agent.id
+    assert res_app.refund.reviewed_by == admin.id
     assert res_app.refund.payment_reference is not None
 
     # Approving twice -> 409 ALREADY_DECIDED
     with pytest.raises(AppError) as exc_dup:
         approve_escalated_refund(
             db=seeded_db,
-            staff_user=agent,
+            staff_user=admin,
             escalation_id=escalation_id,
             note="Approving second time",
         )
@@ -608,7 +608,7 @@ def test_staff_approve_escalated_refund_and_edge_cases(seeded_db: Session) -> No
 
 def test_staff_approve_rechecks_available_balance(seeded_db: Session) -> None:
     cust1 = _get_user_by_email(seeded_db, "customer1@example.com")
-    agent = _get_user_by_email(seeded_db, "agent1@example.com")
+    admin = _get_user_by_email(seeded_db, "admin1@example.com")
     order_c = _get_order_by_amount(seeded_db, Decimal("8999.00"))
 
     # Customer creates an escalated refund for 6000.00
@@ -630,7 +630,7 @@ def test_staff_approve_rechecks_available_balance(seeded_db: Session) -> None:
     with pytest.raises(AppError) as exc_bal:
         approve_escalated_refund(
             db=seeded_db,
-            staff_user=agent,
+            staff_user=admin,
             escalation_id=escalation_id,
             note="Attempting to approve after balance reduced",
         )
@@ -640,7 +640,7 @@ def test_staff_approve_rechecks_available_balance(seeded_db: Session) -> None:
 
 def test_staff_reject_requires_note_and_updates_ticket(seeded_db: Session) -> None:
     cust1 = _get_user_by_email(seeded_db, "customer1@example.com")
-    agent = _get_user_by_email(seeded_db, "agent1@example.com")
+    admin = _get_user_by_email(seeded_db, "admin1@example.com")
     order_c = _get_order_by_amount(seeded_db, Decimal("8999.00"))
 
     res_esc = request_refund(
@@ -657,7 +657,7 @@ def test_staff_reject_requires_note_and_updates_ticket(seeded_db: Session) -> No
     with pytest.raises(AppError) as exc_note:
         reject_refund(
             db=seeded_db,
-            staff_user=agent,
+            staff_user=admin,
             escalation_id=escalation_id,
             note="   ",
         )
@@ -666,13 +666,13 @@ def test_staff_reject_requires_note_and_updates_ticket(seeded_db: Session) -> No
     # Rejection with note -> REJECTED
     res_rej = reject_refund(
         db=seeded_db,
-        staff_user=agent,
+        staff_user=admin,
         escalation_id=escalation_id,
         note="Customer damaged device due to improper wall mount installation.",
     )
     assert res_rej.outcome == Outcome.REJECTED
     assert res_rej.refund.status == RefundStatus.REJECTED
-    assert res_rej.refund.reviewed_by == agent.id
+    assert res_rej.refund.reviewed_by == admin.id
 
     # Ticket closed with system message
     ticket = seeded_db.get(Ticket, ticket_id)

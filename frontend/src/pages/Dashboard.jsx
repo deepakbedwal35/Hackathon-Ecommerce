@@ -4,6 +4,7 @@ import { useAuth } from "../context/AuthContext";
 import { api } from "../api/client";
 import { StatusBadge } from "../components/StatusBadge";
 import { LoadingSpinner } from "../components/LoadingSpinner";
+import { InlineAlert } from "../components/InlineAlert";
 import { IconPackage, IconTicket, IconChevronRight } from "../components/Icons";
 
 export function Dashboard() {
@@ -12,22 +13,28 @@ export function Dashboard() {
   const [tickets, setTickets] = useState([]);
   const [refunds, setRefunds] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  async function loadData() {
+    setLoading(true);
+    setError(null);
+    try {
+      const [ordersData, ticketsData, refundsData] = await Promise.all([
+        api.orders.list(),
+        api.tickets.list(),
+        api.refunds.list(),
+      ]);
+      setOrders(ordersData || []);
+      setTickets(ticketsData || []);
+      setRefunds(refundsData || []);
+    } catch (err) {
+      setError(err.message || "Unable to load your account dashboard.");
+    } finally {
+      setLoading(false);
+    }
+  }
 
   useEffect(() => {
-    async function loadData() {
-      try {
-        const [ordersData, ticketsData, refundsData] = await Promise.all([
-          api.orders.list().catch(() => []),
-          api.tickets.list().catch(() => []),
-          api.refunds.list().catch(() => []),
-        ]);
-        setOrders(ordersData || []);
-        setTickets(ticketsData || []);
-        setRefunds(refundsData || []);
-      } finally {
-        setLoading(false);
-      }
-    }
     loadData();
   }, []);
 
@@ -35,6 +42,26 @@ export function Dashboard() {
     return (
       <div className="py-16 flex justify-center">
         <LoadingSpinner size="lg" label="Loading dashboard..." />
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="space-y-4">
+        <h1 className="text-xl font-semibold text-slate-900">Dashboard</h1>
+        <InlineAlert type="error" title="Unable to load dashboard">
+          <div className="flex items-center justify-between">
+            <span>{error}</span>
+            <button
+              type="button"
+              onClick={loadData}
+              className="font-medium underline hover:text-rose-950 ml-4"
+            >
+              Retry
+            </button>
+          </div>
+        </InlineAlert>
       </div>
     );
   }
