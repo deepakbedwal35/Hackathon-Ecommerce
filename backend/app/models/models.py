@@ -1,4 +1,4 @@
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from decimal import Decimal
 from typing import Any
 import uuid
@@ -285,6 +285,7 @@ class Refund(Base, UUIDPrimaryKeyMixin, TimestampUpdateMixin):
         String(255), unique=True, nullable=False
     )
     failure_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    payment_reference: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
     # Relationships
     order: Mapped["Order"] = relationship("Order", back_populates="refunds")

@@ -37,8 +37,10 @@ from app.models.models import (
 )
 
 
-def seed_database(reset: bool = False) -> None:
-    session: Session = SessionLocal()
+def seed_database(reset: bool = False, session: Session | None = None) -> None:
+    owns_session = session is None
+    if owns_session:
+        session = SessionLocal()
     demo_password = os.getenv("SEED_PASSWORD", "LocalDevDemo123!")
     pw_hash = hash_password(demo_password)
     today = datetime.now(timezone.utc).date()
@@ -321,7 +323,8 @@ def seed_database(reset: bool = False) -> None:
         print(f"❌ Database seed failed: {exc}")
         raise
     finally:
-        session.close()
+        if owns_session:
+            session.close()
 
 
 def main() -> None:
