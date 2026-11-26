@@ -1,5 +1,6 @@
 from typing import Any
 from fastapi import FastAPI, Request, status
+from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
@@ -15,11 +16,13 @@ class AppError(Exception):
         message: str,
         status_code: int = status.HTTP_400_BAD_REQUEST,
         details: Any | None = None,
+        headers: dict[str, str] | None = None,
     ) -> None:
         self.code = code
         self.message = message
         self.status_code = status_code
         self.details = details
+        self.headers = headers
         super().__init__(message)
 
 
@@ -38,6 +41,7 @@ def build_error_response(
     message: str,
     request_id: str,
     details: Any | None = None,
+    headers: dict[str, str] | None = None,
 ) -> JSONResponse:
     payload = {
         "error": {
@@ -47,10 +51,14 @@ def build_error_response(
             "request_id": request_id,
         }
     }
+    response_headers = {"X-Request-ID": request_id}
+    if headers:
+        response_headers.update(headers)
+
     return JSONResponse(
         status_code=status_code,
         content=payload,
-        headers={"X-Request-ID": request_id},
+        headers=response_headers,
     )
 
 
@@ -70,6 +78,7 @@ async def app_error_handler(request: Request, exc: AppError) -> JSONResponse:
         message=exc.message,
         request_id=request_id,
         details=exc.details,
+        headers=exc.headers,
     )
 
 
@@ -77,9 +86,10 @@ async def validation_error_handler(
     request: Request, exc: RequestValidationError
 ) -> JSONResponse:
     request_id = get_request_id(request)
+    details = jsonable_encoder(exc.errors())
     logger.warning(
         "validation_error",
-        errors=exc.errors(),
+        errors=details,
         request_id=request_id,
     )
     return build_error_response(
@@ -87,7 +97,7 @@ async def validation_error_handler(
         code="VALIDATION_ERROR",
         message="Request validation failed",
         request_id=request_id,
-        details=exc.errors(),
+        details=details,
     )
 
 

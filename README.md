@@ -1,10 +1,10 @@
 # E-Commerce AI Customer Support Platform
 
-Foundation and infrastructure skeleton (Part 1) for an enterprise e-commerce AI customer support platform.
+Foundation and infrastructure skeleton for an enterprise e-commerce AI customer support platform.
 
 ## Architecture & Tech Stack
 
-- **Backend**: Python 3.12, FastAPI, SQLAlchemy 2.0, Alembic, psycopg 3, pydantic-settings, structlog, pytest, httpx
+- **Backend**: Python 3.12, FastAPI, SQLAlchemy 2.0, Alembic, psycopg 3, pydantic-settings, structlog, pytest, httpx, argon2-cffi, pyjwt
 - **Frontend**: React + Vite, plain JavaScript (JSX, no TypeScript)
 - **Database**: PostgreSQL 16 via Docker Compose
 - **Logging**: Structured JSON output directly to `stdout` with sensitive field masking and request ID tracking
@@ -20,16 +20,18 @@ Foundation and infrastructure skeleton (Part 1) for an enterprise e-commerce AI 
 │   ├── alembic.ini             # Alembic INI connecting to DATABASE_URL
 │   ├── app/
 │   │   ├── agent/              # AI agent modules (empty __init__.py)
-│   │   ├── api/                # API route handlers (health.py)
-│   │   ├── core/               # config, db, logging, middleware, errors
-│   │   ├── models/             # SQLAlchemy ORM models (empty __init__.py)
-│   │   ├── schemas/            # Pydantic schemas (error.py)
-│   │   ├── services/           # Domain business logic (empty __init__.py)
+│   │   ├── api/                # API routers (health.py, auth.py)
+│   │   ├── core/               # config, db, logging, middleware, errors, security, deps, rate_limit
+│   │   ├── models/             # SQLAlchemy ORM models (users, orders, tickets, etc.)
+│   │   ├── schemas/            # Pydantic schemas (error.py, auth.py)
+│   │   ├── services/           # Domain business logic & ownership helpers (access.py)
 │   │   └── main.py             # FastAPI app factory and router wiring
-│   ├── tests/                  # Pytest test suite (conftest.py, test_health.py)
+│   ├── scripts/                # Database utility scripts (seed.py)
+│   ├── tests/                  # Pytest suite (conftest.py, test_health.py, test_schema.py, test_seed.py, test_auth.py, test_access.py)
 │   ├── Dockerfile              # Python 3.12 slim container definition
 │   └── requirements.txt        # Production & testing dependencies
 ├── frontend/                   # React + Vite JavaScript application scaffold
+├── docs/                       # Architecture & schema documentation (schema.md)
 ├── docker-compose.yml          # PostgreSQL 16 (with healthcheck) + Backend
 ├── .env.example                # Configuration template (placeholders only)
 ├── .gitignore                  # Git ignore rules (.env, node_modules, .venv)
@@ -50,17 +52,16 @@ Foundation and infrastructure skeleton (Part 1) for an enterprise e-commerce AI 
 
 ### 1. Quick Start (Docker Compose)
 
-Start the PostgreSQL 16 database and FastAPI backend with a single command:
+Start the PostgreSQL 16 database and FastAPI backend:
 
 ```bash
 # 1. Copy environment template
 cp .env.example .env
 
 # 2. Start PostgreSQL and Backend services
-docker compose up --build
+docker compose up -d db
+docker compose up --build backend
 ```
-
-The backend automatically waits for PostgreSQL to pass its healthcheck (`pg_isready`) before launching.
 
 - **Liveness Probe**: [http://localhost:8000/health](http://localhost:8000/health) (returns `{"status": "ok"}`)
 - **Readiness Probe**: [http://localhost:8000/health/db](http://localhost:8000/health/db) (returns `{"status": "ok", "database": "connected"}`)
@@ -69,31 +70,57 @@ The backend automatically waits for PostgreSQL to pass its healthcheck (`pg_isre
 
 ---
 
-### 2. Running Migrations
+### 2. Running Migrations & Seeding
 
-Database migrations are powered by Alembic and read `DATABASE_URL` dynamically from the application settings:
+Database migrations use Alembic, reading `DATABASE_URL` dynamically from the application settings:
 
 ```bash
-# Using local virtualenv:
 cd backend
-source .venv/bin/activate  # or activate your venv
+source .venv/bin/activate
+
+# Apply migrations
 alembic upgrade head
 
-# Generate a new migration:
-alembic revision --autogenerate -m "create_initial_tables"
+# Seed initial users, orders, items, refunds, and tickets
+python -m scripts.seed
 
-# Or run migrations inside Docker:
-docker compose exec backend alembic upgrade head
+# Wipe and re-seed from scratch
+python -m scripts.seed --reset
 ```
 
 ---
 
-### 3. Running Backend Tests
+### 3. Authentication & RBAC
 
-Tests run using `pytest` and an in-memory SQLite database (`StaticPool`) so tests execute rapidly without requiring an active PostgreSQL container:
+The API uses stateless HS256 JWT tokens with database-backed user validation on every request.
+
+#### Seeded Accounts
+
+All accounts share the default demo password: `LocalDevDemo123!` (or value from `SEED_PASSWORD` env var):
+
+| Role | Email | Capabilities |
+| :--- | :--- | :--- |
+| **Customer 1** | `customer1@example.com` | Own orders & tickets only |
+| **Customer 2** | `customer2@example.com` | Own orders & tickets only |
+| **Support Agent** | `agent1@example.com` | View all customer tickets & orders, handle refunds |
+| **System Admin** | `admin@example.com` | Global platform administration |
+
+#### Authorizing in Swagger UI (`/docs`)
+
+1. Open [http://localhost:8000/docs](http://localhost:8000/docs)
+2. Send a `POST /api/v1/auth/login` request with e.g. `customer1@example.com` and `LocalDevDemo123!`.
+3. Copy the returned `access_token` string.
+4. Click the green **Authorize 🔓** button in the top right of the Swagger UI.
+5. In the **HTTPBearer (http, Bearer)** input box, paste the token and click **Authorize**.
+6. All subsequent requests (e.g. `GET /api/v1/auth/me`) will automatically include the `Authorization: Bearer <token>` header.
+
+---
+
+### 4. Running Backend Tests
+
+Tests run against a dedicated `support_test` database on Docker Postgres (never modifying dev data):
 
 ```bash
-# From repository root or backend directory:
 cd backend
 source .venv/bin/activate
 pip install -r requirements.txt
@@ -101,18 +128,18 @@ pytest -v
 ```
 
 The test suite validates:
-- `GET /health` returns status code `200` with `{"status": "ok"}`
-- `GET /health/db` returns status code `200` with database connectivity
-- `GET /health/db` returns status code `503` in the standard error shape on connection failure
-- Unknown routes return status code `404` adhering to the uniform error schema
-- Validation errors return status code `422` with a valid `request_id` and error details
-- `X-Request-ID` propagation across all responses
+- Liveness & database readiness health probes (`/health`, `/health/db`)
+- Schema constraints (case-insensitive unique email, 1 active refund per order, idempotency key, numeric money check)
+- Seed script idempotency & relative dates
+- Authentication flows (`/register`, `/login`, `/me`, `/logout`)
+- Constant-time dummy verification on unknown emails
+- In-memory rate limiting (blocks 6th failed attempt in 60s with `Retry-After`)
+- Role-based access control (`require_customer`, `require_staff`)
+- Ownership checks (`get_order_for_user`, `get_ticket_for_user`) returning identical 404s for cross-customer and nonexistent records
 
 ---
 
-### 4. Running the Frontend
-
-The frontend is a lightweight React + Vite scaffold using plain JavaScript (JSX):
+### 5. Running the Frontend
 
 ```bash
 cd frontend
@@ -131,8 +158,8 @@ All API errors return a standard JSON envelope with a tracking `request_id`:
 ```json
 {
   "error": {
-    "code": "VALIDATION_ERROR",
-    "message": "Request validation failed",
+    "code": "INVALID_CREDENTIALS",
+    "message": "Invalid email or password.",
     "details": null,
     "request_id": "8bbbb949-a681-4228-91c6-2c5ea0244799"
   }

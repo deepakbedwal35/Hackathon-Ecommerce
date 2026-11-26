@@ -1,11 +1,15 @@
 import os
 from pathlib import Path
+import uuid
 import pytest
+from fastapi import Depends
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker, Session
 from alembic import command
 from alembic.config import Config
+
+from app.core.rate_limit import clear_all_rate_limits
 
 # Ensure backend root is on sys.path
 backend_path = Path(__file__).resolve().parents[1]
@@ -56,9 +60,9 @@ def setup_test_postgres():
 
 @pytest.fixture
 def db_session(setup_test_postgres):
-    """Provides a clean database session per test with truncation."""
+    """Provides a clean database session per test with truncation and rate-limit reset."""
+    clear_all_rate_limits()
     engine = setup_test_postgres
-    # Truncate tables before each test
     with engine.begin() as conn:
         conn.execute(
             text(
@@ -77,11 +81,38 @@ def db_session(setup_test_postgres):
 
 @pytest.fixture
 def client(setup_test_postgres, db_session):
-    """FastAPI TestClient wired to the test database session."""
+    """FastAPI TestClient wired to the test database session with test-only routes."""
     from app.core.db import get_db
+    from app.core.deps import get_current_user, require_staff
     from app.main import create_app
+    from app.models.models import User
+    from app.services.access import get_order_for_user, get_ticket_for_user
 
     app = create_app()
+
+    # Test-only routes registered exclusively in test harness
+    @app.get("/test/order/{order_id}")
+    def test_get_order(
+        order_id: uuid.UUID,
+        db: Session = Depends(get_db),
+        current_user: User = Depends(get_current_user),
+    ):
+        order = get_order_for_user(db, current_user, order_id)
+        return {"id": str(order.id), "total_amount": str(order.total_amount)}
+
+    @app.get("/test/ticket/{ticket_id}")
+    def test_get_ticket(
+        ticket_id: uuid.UUID,
+        db: Session = Depends(get_db),
+        current_user: User = Depends(get_current_user),
+    ):
+        ticket = get_ticket_for_user(db, current_user, ticket_id)
+        return {"id": str(ticket.id), "subject": ticket.subject}
+
+    @app.get("/test/staff-only")
+    def test_staff_only(current_user: User = Depends(require_staff)):
+        return {"status": "ok", "role": current_user.role.value}
+
     app.dependency_overrides[get_db] = lambda: db_session
     with TestClient(app, raise_server_exceptions=False) as c:
         yield c

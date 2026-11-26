@@ -1,7 +1,7 @@
 from fastapi import APIRouter, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api import health
+from app.api import auth, health
 from app.core.config import settings
 from app.core.errors import register_error_handlers
 from app.core.logging import setup_logging
@@ -44,10 +44,9 @@ def create_app() -> FastAPI:
     # Health check routes (root-level)
     app.include_router(health.router)
 
-    # API v1 router prefix for future domain routes
+    # API v1 router prefix for domain routes
     api_v1_router = APIRouter(prefix="/api/v1")
-    # Note: Domain routers (auth, tickets, chat, etc.) will be mounted under api_v1_router.
-    # Services supporting those routers will reside in app/services/ and app/agent/.
+    api_v1_router.include_router(auth.router, prefix="/auth", tags=["Auth"])
     app.include_router(api_v1_router)
 
     return app

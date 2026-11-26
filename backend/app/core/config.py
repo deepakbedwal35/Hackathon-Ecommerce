@@ -14,6 +14,7 @@ class Settings(BaseSettings):
     APP_ENV: str = "development"
     DATABASE_URL: str = Field(default=..., description="PostgreSQL database URL")
     JWT_SECRET: str = Field(default=..., description="Secret key for JWT verification")
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
     LLM_API_KEY: str = Field(default=..., description="API key for LLM provider")
     CORS_ORIGINS: Union[list[str], str] = [
         "http://localhost:5173",
@@ -27,6 +28,15 @@ class Settings(BaseSettings):
         if not v or not v.strip():
             raise ValueError(
                 "DATABASE_URL is required and cannot be empty. Please set DATABASE_URL."
+            )
+        return v.strip()
+
+    @field_validator("JWT_SECRET")
+    @classmethod
+    def validate_jwt_secret(cls, v: str) -> str:
+        if not v or len(v.strip()) < 32:
+            raise ValueError(
+                "JWT_SECRET is required and must be at least 32 characters long."
             )
         return v.strip()
 
@@ -59,6 +69,17 @@ def load_settings() -> Settings:
             )
             raise RuntimeError(
                 "CRITICAL CONFIG ERROR: DATABASE_URL is required and missing."
+            ) from exc
+        if "JWT_SECRET" in exc_str:
+            sys.stderr.write(
+                "\n=======================================================\n"
+                "CRITICAL CONFIGURATION ERROR:\n"
+                "JWT_SECRET is missing or shorter than 32 characters!\n"
+                "Please configure JWT_SECRET in your environment or .env file.\n"
+                "=======================================================\n\n"
+            )
+            raise RuntimeError(
+                "CRITICAL CONFIG ERROR: JWT_SECRET is required and must be at least 32 characters."
             ) from exc
         raise
 
