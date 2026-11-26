@@ -5,18 +5,22 @@ from fastapi import APIRouter, Depends, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
+from app.agent.runner import run_agent_turn
 from app.core.db import get_db
 from app.core.deps import require_customer
 from app.core.errors import AppError
-from app.models.enums import ActorType, EscalationDecision, SenderType, TicketStatus
+from app.models.enums import ActorType, EscalationDecision, SenderType, TicketPriority, TicketStatus
 from app.models.models import AuditEvent, Escalation, Message, Ticket, User
 from app.schemas.tickets import (
     CustomerMessageCreate,
+    CustomerMessagePostResponse,
     CustomerMessageRead,
+    CustomerTicketCreate,
+    CustomerTicketCreateResponse,
     CustomerTicketDetail,
     CustomerTicketListItem,
 )
-from app.services.access import get_ticket_for_user
+from app.services.access import get_order_for_user, get_ticket_for_user
 
 router = APIRouter(tags=["Customer Tickets"])
 
@@ -63,6 +67,86 @@ def list_customer_tickets(
         )
         for t in tickets
     ]
+
+
+@router.post("", response_model=CustomerTicketCreateResponse, status_code=status.HTTP_201_CREATED)
+def create_customer_ticket(
+    payload: CustomerTicketCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_customer),
+):
+    """
+    Creates a new support ticket with initial customer message and immediately
+    executes an AI support agent turn on that message.
+    """
+    order = None
+    if payload.order_id:
+        order = get_order_for_user(db, current_user, payload.order_id)
+
+    ticket = Ticket(
+        customer_id=current_user.id,
+        order_id=order.id if order else None,
+        subject=payload.subject.strip(),
+        description=payload.description.strip(),
+        category=payload.category,
+        status=TicketStatus.OPEN,
+        priority=TicketPriority.MEDIUM,
+    )
+    db.add(ticket)
+    db.flush()
+
+    msg = Message(
+        ticket_id=ticket.id,
+        sender_type=SenderType.CUSTOMER,
+        sender_id=current_user.id,
+        content=payload.description.strip(),
+    )
+    db.add(msg)
+
+    audit_t = AuditEvent(
+        actor_id=current_user.id,
+        actor_type=ActorType.CUSTOMER,
+        event_type="ticket.created",
+        entity_type="ticket",
+        entity_id=ticket.id,
+        audit_metadata={"order_id": str(order.id) if order else None},
+    )
+    db.add(audit_t)
+
+    audit_msg = AuditEvent(
+        actor_id=current_user.id,
+        actor_type=ActorType.CUSTOMER,
+        event_type="ticket.message_added",
+        entity_type="ticket",
+        entity_id=ticket.id,
+        audit_metadata={"message_id": str(msg.id)},
+    )
+    db.add(audit_msg)
+
+    db.commit()
+    db.refresh(ticket)
+
+    # Run AI agent turn on initial message
+    agent_result = run_agent_turn(db, current_user, ticket)
+    agent_reply_read = None
+    if agent_result.reply_message:
+        agent_reply_read = CustomerMessageRead.model_validate(agent_result.reply_message)
+
+    db.refresh(ticket, ["escalations"])
+    ticket_detail = CustomerTicketDetail(
+        id=ticket.id,
+        customer_id=ticket.customer_id,
+        order_id=ticket.order_id,
+        subject=ticket.subject,
+        description=ticket.description,
+        category=ticket.category,
+        status=ticket.status,
+        priority=ticket.priority,
+        review_status=_compute_review_status(ticket.escalations),
+        created_at=ticket.created_at,
+        updated_at=ticket.updated_at,
+    )
+    return CustomerTicketCreateResponse(ticket=ticket_detail, agent_reply=agent_reply_read)
 
 
 @router.get("/{ticket_id}", response_model=CustomerTicketDetail)
@@ -113,7 +197,7 @@ def list_ticket_messages(
     return db.scalars(stmt).all()
 
 
-@router.post("/{ticket_id}/messages", response_model=CustomerMessageRead, status_code=status.HTTP_201_CREATED)
+@router.post("/{ticket_id}/messages", response_model=CustomerMessagePostResponse, status_code=status.HTTP_201_CREATED)
 def post_customer_message(
     ticket_id: uuid.UUID,
     payload: CustomerMessageCreate,
@@ -124,6 +208,7 @@ def post_customer_message(
     Customer posts a reply to an existing support ticket.
     If an escalation was awaiting more information, automatically resets it to pending
     and re-opens the ticket for staff attention.
+    Triggers an AI agent turn on the committed customer message.
     """
     ticket = get_ticket_for_user(db, current_user, ticket_id)
 
@@ -177,6 +262,20 @@ def post_customer_message(
     )
     db.add(audit_msg)
 
+    # Commit customer message first before running agent turn
     db.commit()
     db.refresh(msg)
-    return msg
+    db.refresh(ticket)
+
+    # Execute agent turn
+    agent_result = run_agent_turn(db, current_user, ticket)
+    agent_reply_read = None
+    if agent_result.reply_message:
+        agent_reply_read = CustomerMessageRead.model_validate(agent_result.reply_message)
+
+    db.refresh(ticket)
+    return CustomerMessagePostResponse(
+        message=CustomerMessageRead.model_validate(msg),
+        agent_reply=agent_reply_read,
+        ticket_status=ticket.status,
+    )

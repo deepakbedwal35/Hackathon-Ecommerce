@@ -73,6 +73,13 @@ class User(Base, UUIDPrimaryKeyMixin, TimestampMixin):
 class Order(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     __tablename__ = "orders"
 
+    order_number: Mapped[str] = mapped_column(
+        String(50),
+        nullable=False,
+        unique=True,
+        index=True,
+        default=lambda: f"ORD-{uuid.uuid4().hex[:8].upper()}",
+    )
     customer_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("users.id", ondelete="RESTRICT", name="fk_orders_customer_id_users"),
@@ -308,7 +315,7 @@ class Refund(Base, UUIDPrimaryKeyMixin, TimestampUpdateMixin):
             "order_id",
             unique=True,
             postgresql_where=text(
-                "status IN ('pending_review', 'approved', 'processed')"
+                "status IN ('pending_review', 'approved')"
             ),
         ),
     )

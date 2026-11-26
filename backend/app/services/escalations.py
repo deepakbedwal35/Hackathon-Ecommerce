@@ -435,3 +435,69 @@ def decide_staff_escalation(
         return db.get(Refund, escalation.refund_id) if escalation.refund_id else None
 
     raise AppError(code="INVALID_DECISION", message="Unknown decision action.", status_code=422)
+
+
+def create_escalation_for_ticket(
+    db: Session,
+    ticket: Ticket,
+    summary: str,
+    priority: TicketPriority | str = TicketPriority.HIGH,
+    source: str = "ai_agent",
+) -> Escalation:
+    """
+    Idempotent helper to create an escalation for a ticket.
+    If an escalation already exists in PENDING or MORE_INFO_REQUESTED status for this ticket,
+    it returns the existing escalation rather than creating a duplicate.
+    Caps summary at 1000 characters, sets ticket status to ESCALATED, and writes an audit event.
+    """
+    existing_esc = db.scalar(
+        select(Escalation)
+        .where(
+            Escalation.ticket_id == ticket.id,
+            Escalation.decision.in_([
+                EscalationDecision.PENDING,
+                EscalationDecision.MORE_INFO_REQUESTED,
+            ]),
+        )
+        .order_by(Escalation.created_at.desc())
+    )
+    if existing_esc:
+        return existing_esc
+
+    # Normalize priority
+    if isinstance(priority, str):
+        priority_map = {
+            "low": TicketPriority.LOW,
+            "medium": TicketPriority.MEDIUM,
+            "high": TicketPriority.HIGH,
+            "urgent": TicketPriority.URGENT,
+        }
+        target_priority = priority_map.get(priority.lower(), TicketPriority.HIGH)
+    else:
+        target_priority = priority
+
+    ticket.status = TicketStatus.ESCALATED
+    ticket.priority = target_priority
+    ticket.updated_at = datetime.now(timezone.utc)
+
+    escalation = Escalation(
+        ticket_id=ticket.id,
+        summary=summary[:1000] if summary else "Escalation requested",
+        priority=target_priority,
+        decision=EscalationDecision.PENDING,
+    )
+    db.add(escalation)
+    db.flush()
+
+    audit = AuditEvent(
+        actor_id=ticket.customer_id,
+        actor_type=ActorType.SYSTEM if source == "agent_failure" else ActorType.CUSTOMER,
+        event_type="escalation.created",
+        entity_type="escalation",
+        entity_id=escalation.id,
+        audit_metadata={"ticket_id": str(ticket.id), "source": source},
+    )
+    db.add(audit)
+    db.commit()
+    db.refresh(escalation)
+    return escalation

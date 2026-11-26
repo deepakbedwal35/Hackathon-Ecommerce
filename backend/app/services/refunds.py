@@ -306,7 +306,6 @@ def request_refund(
             Refund.status.in_([
                 RefundStatus.PENDING_REVIEW,
                 RefundStatus.APPROVED,
-                RefundStatus.PROCESSED,
             ]),
         )
     )
@@ -318,8 +317,8 @@ def request_refund(
             message="An active refund request already exists for this order.",
         )
 
-    # 9. Threshold Check: > 5000.00 INR -> Human Escalation Path
-    if dec_amount > AUTO_REFUND_LIMIT:
+    # 9. Threshold Check: cumulative refunded + this amount > 5000.00 INR -> Human Escalation Path
+    if (existing_refunds_sum + dec_amount) > AUTO_REFUND_LIMIT:
         try:
             # Bind to ticket or create one
             bound_ticket_id = ticket_id

@@ -103,6 +103,7 @@ def seed_database(reset: bool = False, session: Session | None = None) -> None:
         if not existing_orders:
             # Order A: customer1, delivered 5 days ago, total 1,299, electronics -> eligible refund
             order_a = Order(
+                order_number="ORD-1001",
                 customer_id=cust1.id,
                 status=OrderStatus.DELIVERED,
                 delivery_date=today - timedelta(days=5),
@@ -121,6 +122,7 @@ def seed_database(reset: bool = False, session: Session | None = None) -> None:
 
             # Order B: customer1, delivered 45 days ago, total 2,499, fashion -> return window expired
             order_b = Order(
+                order_number="ORD-1002",
                 customer_id=cust1.id,
                 status=OrderStatus.DELIVERED,
                 delivery_date=today - timedelta(days=45),
@@ -139,6 +141,7 @@ def seed_database(reset: bool = False, session: Session | None = None) -> None:
 
             # Order C: customer1, delivered 3 days ago, total 8,999, electronics -> above 5,000, needs escalation
             order_c = Order(
+                order_number="ORD-1003",
                 customer_id=cust1.id,
                 status=OrderStatus.DELIVERED,
                 delivery_date=today - timedelta(days=3),
@@ -165,6 +168,7 @@ def seed_database(reset: bool = False, session: Session | None = None) -> None:
 
             # Order D: customer1, shipped, not delivered yet, total 799 -> not refundable yet
             order_d = Order(
+                order_number="ORD-1004",
                 customer_id=cust1.id,
                 status=OrderStatus.SHIPPED,
                 delivery_date=None,
@@ -183,6 +187,7 @@ def seed_database(reset: bool = False, session: Session | None = None) -> None:
 
             # Order E: customer1, delivered 10 days ago, with already PROCESSED refund -> duplicate/already refunded
             order_e = Order(
+                order_number="ORD-1005",
                 customer_id=cust1.id,
                 status=OrderStatus.DELIVERED,
                 delivery_date=today - timedelta(days=10),
@@ -214,6 +219,7 @@ def seed_database(reset: bool = False, session: Session | None = None) -> None:
 
             # Order F: customer2, delivered 4 days ago, total 1,999 -> used for cross-customer access tests
             order_f = Order(
+                order_number="ORD-1006",
                 customer_id=cust2.id,
                 status=OrderStatus.DELIVERED,
                 delivery_date=today - timedelta(days=4),
@@ -232,6 +238,7 @@ def seed_database(reset: bool = False, session: Session | None = None) -> None:
 
             # Order G: customer1, grocery, delivered 2 days ago, total 450 -> non-returnable category test
             order_g = Order(
+                order_number="ORD-1007",
                 customer_id=cust1.id,
                 status=OrderStatus.DELIVERED,
                 delivery_date=today - timedelta(days=2),

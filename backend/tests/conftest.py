@@ -80,6 +80,14 @@ def db_session(setup_test_postgres):
 
 
 @pytest.fixture
+def seeded_db(db_session: Session) -> Session:
+    """Pre-seeds the test database with standard seed data."""
+    from scripts.seed import seed_database
+    seed_database(reset=True, session=db_session)
+    return db_session
+
+
+@pytest.fixture
 def client(setup_test_postgres, db_session):
     """FastAPI TestClient wired to the test database session with test-only routes."""
     from app.core.db import get_db

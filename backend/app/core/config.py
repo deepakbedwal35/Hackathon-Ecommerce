@@ -19,7 +19,10 @@ class Settings(BaseSettings):
     AUTO_REFUND_LIMIT: str = "5000.00"
     PAYMENT_MOCK_MODE: str = "ok"
     NON_RETURNABLE_CATEGORIES: list[str] = ["grocery"]
-    LLM_API_KEY: str = Field(default=..., description="API key for LLM provider")
+    LLM_PROVIDER: str = "gemini"
+    LLM_API_KEY: str = Field(default="", description="API key for LLM provider")
+    LLM_MODEL: str = "gemini-1.5-flash"
+    LLM_TIMEOUT_SECONDS: int = 20
     CORS_ORIGINS: Union[list[str], str] = [
         "http://localhost:5173",
         "http://localhost:3000",
