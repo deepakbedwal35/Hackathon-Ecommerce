@@ -21,7 +21,9 @@ class Settings(BaseSettings):
     NON_RETURNABLE_CATEGORIES: list[str] = ["grocery"]
     LLM_PROVIDER: str = "gemini"
     LLM_API_KEY: str = Field(default="", description="API key for LLM provider")
+    GROQ_API_KEY: str | None = None
     LLM_MODEL: str = "gemini-1.5-flash"
+    LLM_BASE_URL: str | None = None
     LLM_TIMEOUT_SECONDS: int = 20
     CORS_ORIGINS: Union[list[str], str] = [
         "http://localhost:5173",

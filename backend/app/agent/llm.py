@@ -152,10 +152,16 @@ class OpenAIClient(LLMClient):
         self,
         api_key: str | None = None,
         model: str | None = None,
+        base_url: str | None = None,
         timeout: int | None = None,
     ):
         self.api_key = api_key or settings.LLM_API_KEY
-        self.model = model or "gpt-4o"
+        self.model = model or settings.LLM_MODEL or "gpt-4o"
+        self.base_url = (
+            base_url
+            or getattr(settings, "LLM_BASE_URL", None)
+            or "https://api.openai.com/v1/chat/completions"
+        )
         self.timeout = timeout or settings.LLM_TIMEOUT_SECONDS
 
     def chat(
@@ -164,14 +170,47 @@ class OpenAIClient(LLMClient):
         messages: list[dict[str, Any]],
         tools: list[dict[str, Any]] | None = None,
     ) -> LLMResponse:
-        url = "https://api.openai.com/v1/chat/completions"
         headers = {
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json",
         }
         formatted_messages = [{"role": "system", "content": system}]
         for m in messages:
-            formatted_messages.append(m)
+            msg_copy = dict(m)
+            if "tool_calls" in msg_copy and msg_copy["tool_calls"]:
+                clean_tool_calls = []
+                for tc in msg_copy["tool_calls"]:
+                    fn = tc.get("function", {})
+                    fn_name = fn.get("name") or tc.get("name", "")
+                    fn_args = fn.get("arguments") if "arguments" in fn else tc.get("arguments", {})
+                    if isinstance(fn_args, dict):
+                        fn_args = json.dumps(fn_args)
+                    clean_tool_calls.append({
+                        "id": tc.get("id", f"call_{fn_name}"),
+                        "type": "function",
+                        "function": {
+                            "name": fn_name,
+                            "arguments": fn_args,
+                        },
+                    })
+                msg_copy = {
+                    "role": msg_copy.get("role", "assistant"),
+                    "content": msg_copy.get("content") or None,
+                    "tool_calls": clean_tool_calls,
+                }
+            elif msg_copy.get("role") == "tool":
+                msg_copy = {
+                    "role": "tool",
+                    "tool_call_id": msg_copy.get("tool_call_id", ""),
+                    "name": msg_copy.get("name", ""),
+                    "content": msg_copy.get("content", ""),
+                }
+            else:
+                msg_copy = {
+                    "role": msg_copy.get("role", "user"),
+                    "content": msg_copy.get("content", ""),
+                }
+            formatted_messages.append(msg_copy)
 
         payload: dict[str, Any] = {
             "model": self.model,
@@ -182,8 +221,9 @@ class OpenAIClient(LLMClient):
             payload["tools"] = tools
 
         with httpx.Client(timeout=float(self.timeout)) as client:
-            resp = client.post(url, headers=headers, json=payload)
+            resp = client.post(self.base_url, headers=headers, json=payload)
             if resp.status_code != 200:
+                logger.error("openai_api_error", status_code=resp.status_code, body=resp.text)
                 raise RuntimeError(f"OpenAI API returned status {resp.status_code}: {resp.text}")
 
             data = resp.json()
@@ -197,6 +237,46 @@ class OpenAIClient(LLMClient):
                 tool_calls.append(ToolCall(id=rc["id"], name=fn["name"], arguments=args))
 
             return LLMResponse(text=text_resp, tool_calls=tool_calls)
+
+
+class GroqClient(OpenAIClient):
+    """
+    Groq API client using OpenAI-compatible chat completions with native tool calling.
+    Supports openai/gpt-oss-120b and other open-source models with reasoning and tool calling.
+    """
+
+    MODEL_ALIASES = {
+        "oss-120b": "openai/gpt-oss-120b",
+        "gpt-oss-120b": "openai/gpt-oss-120b",
+        "openai/gpt-oss-120b": "openai/gpt-oss-120b",
+        "oss-20b": "openai/gpt-oss-20b",
+        "gpt-oss-20b": "openai/gpt-oss-20b",
+        "openai/gpt-oss-20b": "openai/gpt-oss-20b",
+        "llama-3.3-70b": "llama-3.3-70b-versatile",
+        "llama-70b": "llama-3.3-70b-versatile",
+    }
+
+    def __init__(
+        self,
+        api_key: str | None = None,
+        model: str | None = None,
+        timeout: int | None = None,
+        base_url: str | None = None,
+    ):
+        raw_key = api_key or getattr(settings, "GROQ_API_KEY", None) or settings.LLM_API_KEY
+        raw_model = model or getattr(settings, "LLM_MODEL", None) or "openai/gpt-oss-120b"
+        resolved_model = self.MODEL_ALIASES.get(raw_model.lower(), raw_model)
+        resolved_base_url = (
+            base_url
+            or getattr(settings, "LLM_BASE_URL", None)
+            or "https://api.groq.com/openai/v1/chat/completions"
+        )
+        super().__init__(
+            api_key=raw_key,
+            model=resolved_model,
+            base_url=resolved_base_url,
+            timeout=timeout,
+        )
 
 
 class FakeLLMClient(LLMClient):
@@ -236,7 +316,22 @@ class FakeLLMClient(LLMClient):
 
 def get_default_llm_client() -> LLMClient:
     """Factory creating the configured LLMClient based on settings."""
-    provider = getattr(settings, "LLM_PROVIDER", "gemini").lower()
+    provider = getattr(settings, "LLM_PROVIDER", "").lower()
+    api_key = (
+        getattr(settings, "GROQ_API_KEY", None)
+        or getattr(settings, "LLM_API_KEY", "")
+    )
+    model = getattr(settings, "LLM_MODEL", "").lower()
+
+    if (
+        provider in ("groq", "groqcloud")
+        or api_key.startswith("gsk_")
+        or "oss" in model
+        or getattr(settings, "GROQ_API_KEY", None)
+    ):
+        return GroqClient()
+
     if provider == "openai":
         return OpenAIClient()
+
     return GeminiClient()

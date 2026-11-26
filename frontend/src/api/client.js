@@ -32,7 +32,11 @@ async function request(endpoint, options = {}) {
   };
 
   const token = getStoredToken();
-  if (token && !headers["Authorization"]) {
+  const isPublicAuthEndpoint =
+    endpoint.startsWith("/api/v1/auth/login") ||
+    endpoint.startsWith("/api/v1/auth/register");
+
+  if (token && !headers["Authorization"] && !isPublicAuthEndpoint) {
     headers["Authorization"] = `Bearer ${token}`;
   }
 

@@ -30,9 +30,12 @@ services:
       - "8000:8000"
     environment:
       APP_ENV: ${APP_ENV:-development}
-      DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg://postgres:postgres@db:5432/ecommerce_db}
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@db:5432/${POSTGRES_DB:-ecommerce_db}
       JWT_SECRET: ${JWT_SECRET:-local_default_jwt_secret_change_me_in_production}
-      LLM_API_KEY: ${LLM_API_KEY:-local_default_dummy_llm_api_key}
+      LLM_PROVIDER: ${LLM_PROVIDER:-groq}
+      LLM_MODEL: ${LLM_MODEL:-openai/gpt-oss-120b}
+      GROQ_API_KEY: ${GROQ_API_KEY:-}
+      LLM_API_KEY: ${LLM_API_KEY:-}
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173,http://localhost:3000}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
     depends_on:

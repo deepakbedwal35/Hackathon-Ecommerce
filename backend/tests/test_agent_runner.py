@@ -638,3 +638,30 @@ def test_customer_cannot_access_other_customers_ticket(seeded_db: Session) -> No
     with pytest.raises(AppError) as exc_info:
         get_ticket_for_user(seeded_db, cust1, ticket_cust2.id)
     assert exc_info.value.status_code == 404
+
+
+# 18. GroqClient initialization and model alias normalization
+def test_groq_client_model_alias_resolution() -> None:
+    from app.agent.llm import GroqClient, get_default_llm_client
+
+    client_alias = GroqClient(api_key="gsk_test123", model="oss-120b")
+    assert client_alias.model == "openai/gpt-oss-120b"
+    assert client_alias.base_url == "https://api.groq.com/openai/v1/chat/completions"
+
+    client_full = GroqClient(api_key="gsk_test123", model="openai/gpt-oss-120b")
+    assert client_full.model == "openai/gpt-oss-120b"
+
+    client_llama = GroqClient(api_key="gsk_test123", model="llama-3.3-70b")
+    assert client_llama.model == "llama-3.3-70b-versatile"
+
+
+def test_groq_client_auto_detection(monkeypatch: pytest.MonkeyPatch) -> None:
+    from app.agent.llm import GroqClient, get_default_llm_client
+
+    monkeypatch.setattr(settings, "LLM_PROVIDER", "groq")
+    monkeypatch.setattr(settings, "GROQ_API_KEY", "gsk_test_key_123")
+    monkeypatch.setattr(settings, "LLM_MODEL", "oss-120b")
+
+    client = get_default_llm_client()
+    assert isinstance(client, GroqClient)
+    assert client.model == "openai/gpt-oss-120b"

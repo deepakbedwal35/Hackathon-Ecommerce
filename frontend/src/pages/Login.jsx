@@ -113,19 +113,19 @@ export function Login() {
           <div className="space-y-1.5">
             <button
               type="button"
-              onClick={() => handleQuickFill("customer@example.com", "password123")}
+              onClick={() => handleQuickFill("customer1@example.com", "LocalDevDemo123!")}
               className="w-full text-left text-[11px] px-2.5 py-1.5 border border-slate-200 rounded-md hover:bg-slate-50 transition-colors text-slate-700 flex justify-between"
             >
-              <span>customer@example.com</span>
-              <span className="text-slate-400">password123</span>
+              <span>customer1@example.com</span>
+              <span className="text-slate-400">LocalDevDemo123!</span>
             </button>
             <button
               type="button"
-              onClick={() => handleQuickFill("bob@example.com", "password123")}
+              onClick={() => handleQuickFill("customer2@example.com", "LocalDevDemo123!")}
               className="w-full text-left text-[11px] px-2.5 py-1.5 border border-slate-200 rounded-md hover:bg-slate-50 transition-colors text-slate-700 flex justify-between"
             >
-              <span>bob@example.com</span>
-              <span className="text-slate-400">password123</span>
+              <span>customer2@example.com</span>
+              <span className="text-slate-400">LocalDevDemo123!</span>
             </button>
           </div>
         </div>
