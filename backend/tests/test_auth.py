@@ -237,6 +237,33 @@ def test_rate_limiter_blocks_on_sixth_failed_attempt(client: TestClient) -> None
     assert "Retry-After" in res_blocked.headers
 
 
+def test_rate_limiter_blocks_on_register_after_repeated_failures(
+    client: TestClient,
+) -> None:
+    """Test 5 failed registration attempts are allowed, 6th returns 429 with Retry-After header."""
+    # Register an account first so subsequent attempts trigger conflict
+    client.post(
+        "/api/v1/auth/register",
+        json={"name": "Taken", "email": "taken@example.com", "password": "Password123"},
+    )
+
+    for _ in range(5):
+        res = client.post(
+            "/api/v1/auth/register",
+            json={"name": "Attacker", "email": "taken@example.com", "password": "Password123"},
+        )
+        assert res.status_code == 409
+
+    # 6th attempt within window
+    res_blocked = client.post(
+        "/api/v1/auth/register",
+        json={"name": "Attacker", "email": "taken@example.com", "password": "Password123"},
+    )
+    assert res_blocked.status_code == 429
+    assert res_blocked.json()["error"]["code"] == "RATE_LIMITED"
+    assert "Retry-After" in res_blocked.headers
+
+
 def test_audit_events_created_without_raw_credentials(
     client: TestClient, db_session: Session
 ) -> None:

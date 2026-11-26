@@ -57,6 +57,9 @@ def register(
     request_id = get_request_id(request)
     normalized_email = payload.email.strip().lower()
 
+    # Rate limiting: max 5 failed attempts per minute per (IP + email)
+    check_rate_limit(client_ip, normalized_email)
+
     # Check for existing email case-insensitively
     existing = db.scalar(select(User).where(User.email == normalized_email))
     if existing:
@@ -90,6 +93,9 @@ def register(
     db.add(audit)
     db.commit()
     db.refresh(new_user)
+
+    # Success: clear failed attempts
+    reset_failures(client_ip, normalized_email)
 
     logger.info("user_registered", user_id=str(new_user.id), request_id=request_id)
     return UserRead.model_validate(new_user)
