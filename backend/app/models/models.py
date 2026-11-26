@@ -196,6 +196,9 @@ class Ticket(Base, UUIDPrimaryKeyMixin, TimestampUpdateMixin):
     escalations: Mapped[list["Escalation"]] = relationship(
         "Escalation", back_populates="ticket"
     )
+    refunds: Mapped[list["Refund"]] = relationship(
+        "Refund", back_populates="ticket"
+    )
 
     __table_args__ = (
         Index("ix_tickets_customer_id_status", "customer_id", "status"),
@@ -289,7 +292,7 @@ class Refund(Base, UUIDPrimaryKeyMixin, TimestampUpdateMixin):
 
     # Relationships
     order: Mapped["Order"] = relationship("Order", back_populates="refunds")
-    ticket: Mapped["Ticket | None"] = relationship("Ticket")
+    ticket: Mapped["Ticket | None"] = relationship("Ticket", back_populates="refunds")
     requester: Mapped["User"] = relationship("User", foreign_keys=[requested_by])
     reviewer: Mapped["User | None"] = relationship("User", foreign_keys=[reviewed_by])
     escalations: Mapped[list["Escalation"]] = relationship(

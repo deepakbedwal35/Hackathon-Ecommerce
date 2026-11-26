@@ -526,7 +526,7 @@ def approve_escalated_refund(
     if escalation is None:
         raise AppError(code="NOT_FOUND", message="Escalation not found.", status_code=404)
 
-    if escalation.decision != EscalationDecision.PENDING:
+    if escalation.decision not in (EscalationDecision.PENDING, EscalationDecision.MORE_INFO_REQUESTED):
         raise AppError(
             code="ALREADY_DECIDED",
             message="This escalation has already been decided.",
@@ -539,6 +539,13 @@ def approve_escalated_refund(
     refund = db.execute(
         select(Refund).where(Refund.id == escalation.refund_id).with_for_update()
     ).scalar_one()
+
+    if refund.status == RefundStatus.PROCESSED:
+        raise AppError(
+            code="ALREADY_DECIDED",
+            message="This refund has already been processed.",
+            status_code=409,
+        )
 
     order = db.execute(
         select(Order).where(Order.id == refund.order_id).with_for_update()
@@ -565,19 +572,21 @@ def approve_escalated_refund(
             status_code=409,
         )
 
-    # Approve refund and escalation
+    # If the refund was previously marked failed, clean up any suffixed idempotency key
+    if ":failed:" in refund.idempotency_key:
+        clean_key = refund.idempotency_key.split(":failed:")[0]
+        refund.idempotency_key = clean_key
+
+    # Stage escalation as approved to serialize concurrent staff actions
     now = datetime.now(timezone.utc)
     escalation.decision = EscalationDecision.APPROVED
     escalation.decided_at = now
     escalation.assigned_to = staff_user.id
-    escalation.internal_note = note
+    if note:
+        escalation.internal_note = note
     refund.status = RefundStatus.APPROVED
+    refund.failure_reason = None
     refund.reviewed_by = staff_user.id
-
-    if escalation.ticket_id:
-        t = db.get(Ticket, escalation.ticket_id)
-        if t:
-            t.status = TicketStatus.RESOLVED
 
     _audit(db, staff_user.id, ActorType.STAFF, "refund.staff_approved", refund.id, {"note": note})
     db.commit()
@@ -592,6 +601,13 @@ def approve_escalated_refund(
         ref_row = db.get(Refund, refund.id)
         ref_row.status = RefundStatus.PROCESSED
         ref_row.payment_reference = payment_res.reference
+
+        esc_row = db.get(Escalation, escalation.id)
+        if esc_row.ticket_id:
+            t = db.get(Ticket, esc_row.ticket_id)
+            if t:
+                t.status = TicketStatus.RESOLVED
+
         _audit(db, staff_user.id, ActorType.STAFF, "refund.processed", refund.id, {"reference": payment_res.reference})
         db.commit()
         db.refresh(refund)
@@ -601,10 +617,16 @@ def approve_escalated_refund(
             message="Refund approved and payment processed successfully.",
         )
 
+    # Payment failed again: revert escalation to PENDING to leave it open for retry
     ref_row = db.get(Refund, refund.id)
     ref_row.status = RefundStatus.FAILED
     ref_row.failure_reason = payment_res.error
     ref_row.idempotency_key = f"{refund.idempotency_key}:failed:{refund.id}"
+
+    esc_row = db.get(Escalation, escalation.id)
+    esc_row.decision = EscalationDecision.PENDING
+    esc_row.decided_at = None
+
     _audit(db, staff_user.id, ActorType.STAFF, "refund.failed", refund.id, {"error": payment_res.error})
     db.commit()
     db.refresh(refund)
@@ -612,7 +634,7 @@ def approve_escalated_refund(
         outcome=Outcome.ERROR,
         refund=refund,
         reason_code=ReasonCode.PAYMENT_FAILED,
-        message="Refund was approved by staff, but payment processing failed.",
+        message="Refund was approved by staff, but payment processing failed. The refund was NOT completed.",
     )
 
 
@@ -621,6 +643,7 @@ def reject_refund(
     staff_user: User,
     escalation_id: uuid.UUID,
     note: str,
+    message_to_customer: str | None = None,
 ) -> RefundResult:
     """Staff decision path to reject an escalated refund."""
     if staff_user.role not in (UserRole.AGENT, UserRole.ADMIN):
@@ -644,7 +667,7 @@ def reject_refund(
     if escalation is None:
         raise AppError(code="NOT_FOUND", message="Escalation not found.", status_code=404)
 
-    if escalation.decision != EscalationDecision.PENDING:
+    if escalation.decision not in (EscalationDecision.PENDING, EscalationDecision.MORE_INFO_REQUESTED):
         raise AppError(
             code="ALREADY_DECIDED",
             message="This escalation has already been decided.",
@@ -667,16 +690,37 @@ def reject_refund(
     refund.reviewed_by = staff_user.id
 
     if escalation.ticket_id:
-        sys_msg = Message(
-            ticket_id=escalation.ticket_id,
-            sender_type=SenderType.SYSTEM,
-            sender_id=None,
-            content=f"Refund request rejected by staff. Note: {note.strip()}",
-        )
-        db.add(sys_msg)
         t = db.get(Ticket, escalation.ticket_id)
-        if t:
-            t.status = TicketStatus.CLOSED
+        if message_to_customer and message_to_customer.strip():
+            staff_msg = Message(
+                ticket_id=escalation.ticket_id,
+                sender_type=SenderType.STAFF,
+                sender_id=staff_user.id,
+                content=message_to_customer.strip(),
+            )
+            db.add(staff_msg)
+            if t:
+                t.status = TicketStatus.RESOLVED
+        else:
+            sys_msg = Message(
+                ticket_id=escalation.ticket_id,
+                sender_type=SenderType.SYSTEM,
+                sender_id=None,
+                content=f"Refund request rejected by staff. Note: {note.strip()}",
+            )
+            db.add(sys_msg)
+            if t:
+                t.status = TicketStatus.CLOSED
+
+    _audit(db, staff_user.id, ActorType.STAFF, "refund.staff_rejected", refund.id, {"note": note.strip()})
+    db.commit()
+    db.refresh(refund)
+
+    return RefundResult(
+        outcome=Outcome.REJECTED,
+        refund=refund,
+        message="Refund request has been rejected.",
+    )
 
     _audit(db, staff_user.id, ActorType.STAFF, "refund.staff_rejected", refund.id, {"note": note.strip()})
     db.commit()

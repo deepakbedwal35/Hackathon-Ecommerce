@@ -28,11 +28,13 @@ from app.models.enums import (
 )
 from app.models.models import (
     AuditEvent,
+    Escalation,
     Message,
     Order,
     OrderItem,
     Refund,
     Ticket,
+    TicketNote,
     User,
 )
 
@@ -50,6 +52,8 @@ def seed_database(reset: bool = False, session: Session | None = None) -> None:
             print("Wiping existing data (--reset flag provided)...")
             # Clear tables in dependency order
             session.execute(delete(AuditEvent))
+            session.execute(delete(Escalation))
+            session.execute(delete(TicketNote))
             session.execute(delete(Message))
             session.execute(delete(Refund))
             session.execute(delete(Ticket))

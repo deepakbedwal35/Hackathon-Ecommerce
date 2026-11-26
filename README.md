@@ -151,6 +151,43 @@ Visit [http://localhost:5173](http://localhost:5173) to view the development ser
 
 ---
 
+## API Endpoints Reference
+
+### Public & Authentication (`/api/v1/auth`)
+| Method | Path | Auth | Description |
+| :--- | :--- | :--- | :--- |
+| `POST` | `/api/v1/auth/register` | Public | Register new customer account (role=customer) |
+| `POST` | `/api/v1/auth/login` | Public | Authenticate user & issue JWT bearer token |
+| `GET` | `/api/v1/auth/me` | Authenticated | Retrieve profile of authenticated user |
+| `POST` | `/api/v1/auth/logout` | Authenticated | Stateless token logout audit |
+
+### Customer APIs (`/api/v1`)
+| Method | Path | Auth | Description |
+| :--- | :--- | :--- | :--- |
+| `POST` | `/api/v1/refunds` | Customer | Request refund with policy evaluation & mock rails |
+| `GET` | `/api/v1/refunds` | Customer | List authenticated customer's own refunds |
+| `GET` | `/api/v1/refunds/{id}` | Customer | Retrieve specific customer refund with progress |
+| `GET` | `/api/v1/tickets` | Customer | List customer support tickets with `review_status` |
+| `GET` | `/api/v1/tickets/{id}` | Customer | Get customer ticket detail (notes excluded) |
+| `GET` | `/api/v1/tickets/{id}/messages` | Customer | List customer-visible messages on ticket |
+| `POST` | `/api/v1/tickets/{id}/messages` | Customer | Reply to ticket; auto-reopens `more_info_requested` |
+
+### Staff Operations & Dashboard (`/api/v1/staff`)
+| Method | Path | Auth | Description |
+| :--- | :--- | :--- | :--- |
+| `GET` | `/api/v1/staff/tickets` | Staff | Paginated ticket queue with SLA sort & search |
+| `GET` | `/api/v1/staff/tickets/{id}` | Staff | Full ticket context (order, refunds, notes, escalations) |
+| `PATCH` | `/api/v1/staff/tickets/{id}` | Staff | Transition ticket status/priority with strict invariants |
+| `POST` | `/api/v1/staff/tickets/{id}/messages`| Staff | Post customer-visible staff reply on ticket |
+| `GET` | `/api/v1/staff/tickets/{id}/notes` | Staff | List internal, staff-only notes on ticket |
+| `POST` | `/api/v1/staff/tickets/{id}/notes` | Staff | Append internal note to ticket (audit tracked) |
+| `GET` | `/api/v1/staff/escalations` | Staff | Paginated escalation queue with SLA priority sort |
+| `GET` | `/api/v1/staff/escalations/{id}` | Staff | Full escalation context with passed verification checks |
+| `POST` | `/api/v1/staff/escalations/{id}/assign` | Staff | Assign escalation (agent to self, admin to any staff) |
+| `POST` | `/api/v1/staff/escalations/{id}/decision` | Staff | Approve refund, reject with explanation, or request info |
+
+---
+
 ## Error Response Standard
 
 All API errors return a standard JSON envelope with a tracking `request_id`:

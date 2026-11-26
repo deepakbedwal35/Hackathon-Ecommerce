@@ -87,3 +87,30 @@ flowchart TD
 | `REJECTED` | `ACTIVE_REFUND_EXISTS` | **409 Conflict** | An active refund request is already in progress for this order. |
 | `ERROR` | `PAYMENT_FAILED` | **502 Bad Gateway** | Payment gateway declined or timed out; refund was NOT completed. |
 | `ERROR` | `INTERNAL_ERROR` | **500 Internal Error** | Unexpected unhandled failure. |
+
+---
+
+## 4. Human Escalation Review State Machine
+
+Escalations created during Step 9 transition through a human-in-the-loop review state machine governed by `app/services/escalations.py` and `app/services/refunds.py`:
+
+```mermaid
+stateDiagram-v2
+    [*] --> Pending: Request refund > 5000.00 INR (Step 9)
+
+    Pending --> Approved: Staff decides "approve" (re-checks balance & dispatches payment)
+    Pending --> Rejected: Staff decides "reject" (with internal note & customer explanation)
+    Pending --> MoreInfoRequested: Staff decides "request_info" (asks customer question)
+
+    MoreInfoRequested --> Pending: Customer replies with message on ticket
+    MoreInfoRequested --> Approved: Staff approves with info on hand
+    MoreInfoRequested --> Rejected: Staff rejects
+
+    Approved --> [*]: Refund PROCESSED (ticket RESOLVED)
+    Rejected --> [*]: Refund REJECTED (ticket RESOLVED)
+```
+
+### Invariants for Human Reviews:
+1. **Decision Eligibility**: Staff can only approve or reject an escalation when its current decision is `pending` or `more_info_requested`. Once decided (`approved` or `rejected`), subsequent decision attempts return HTTP 409 `ALREADY_DECIDED`.
+2. **Atomic Payment Execution**: When approving, `approve_escalated_refund` re-checks the order's delivered status and refundable balance. If the payment gateway fails, the refund status is set to `failed` while the escalation decision remains open in `pending` to allow staff to retry without spawning duplicate refund rows.
+3. **Customer Reply Cycle**: When a customer responds to a ticket marked `awaiting_customer` whose escalation is `more_info_requested`, the system automatically shifts the escalation back to `pending` and the ticket to `open`, queuing it for staff review.
