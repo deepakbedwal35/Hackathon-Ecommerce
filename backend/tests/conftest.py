@@ -6,6 +6,7 @@ from fastapi import Depends
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker, Session
+from sqlalchemy.pool import NullPool
 from alembic import command
 from alembic.config import Config
 
@@ -53,7 +54,10 @@ def setup_test_postgres():
     alembic_cfg.set_main_option("script_location", str(backend_path / "alembic"))
     command.upgrade(alembic_cfg, "head")
 
-    test_engine = create_engine(TEST_DATABASE_URL, pool_pre_ping=True)
+    test_engine = create_engine(TEST_DATABASE_URL, poolclass=NullPool)
+    import app.core.db as core_db
+    core_db.engine = test_engine
+    core_db.SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=test_engine)
     yield test_engine
     test_engine.dispose()
 
@@ -66,8 +70,15 @@ def db_session(setup_test_postgres):
     with engine.begin() as conn:
         conn.execute(
             text(
-                "TRUNCATE TABLE audit_events, escalations, ticket_notes, messages, "
-                "refunds, tickets, order_items, orders, users CASCADE;"
+                "DELETE FROM audit_events; "
+                "DELETE FROM escalations; "
+                "DELETE FROM ticket_notes; "
+                "DELETE FROM messages; "
+                "DELETE FROM refunds; "
+                "DELETE FROM tickets; "
+                "DELETE FROM order_items; "
+                "DELETE FROM orders; "
+                "DELETE FROM users;"
             )
         )
 
@@ -76,6 +87,7 @@ def db_session(setup_test_postgres):
     try:
         yield session
     finally:
+        session.rollback()
         session.close()
 
 

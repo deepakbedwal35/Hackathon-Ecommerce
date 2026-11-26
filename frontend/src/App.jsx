@@ -1,19 +1,89 @@
-import { useState } from 'react';
+import React from "react";
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { AuthProvider } from "./context/AuthContext";
+import { Layout } from "./components/Layout";
+import { ProtectedRoute } from "./components/ProtectedRoute";
+
+// Pages
+import { Login } from "./pages/Login";
+import { Register } from "./pages/Register";
+import { Dashboard } from "./pages/Dashboard";
+import { Orders } from "./pages/Orders";
+import { OrderDetail } from "./pages/OrderDetail";
+import { Tickets } from "./pages/Tickets";
+import { NewTicket } from "./pages/NewTicket";
+import { TicketChat } from "./pages/TicketChat";
+import { Privacy } from "./pages/Privacy";
+import { Terms } from "./pages/Terms";
+import { NotFound } from "./pages/NotFound";
 
 export default function App() {
-  const [count, setCount] = useState(0);
-
   return (
-    <div className="min-h-screen bg-slate-900 text-white flex flex-col items-center justify-center p-6">
-      <h1 className="text-4xl font-bold tracking-tight text-center mb-6">
-        E-Commerce AI Customer Support
-      </h1>
-      <button
-        onClick={() => setCount((c) => c + 1)}
-        className="rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-medium text-white transition-colors duration-200 hover:bg-blue-500 focus:outline-none focus:ring-4 focus:ring-blue-300 dark:focus:ring-blue-800"
-      >
-        Count is {count}
-      </button>
-    </div>
+    <BrowserRouter>
+      <AuthProvider>
+        <Layout>
+          <Routes>
+            {/* Public routes */}
+            <Route path="/login" element={<Login />} />
+            <Route path="/register" element={<Register />} />
+            <Route path="/privacy" element={<Privacy />} />
+            <Route path="/terms" element={<Terms />} />
+
+            {/* Protected Customer routes */}
+            <Route
+              path="/"
+              element={
+                <ProtectedRoute>
+                  <Dashboard />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/orders"
+              element={
+                <ProtectedRoute>
+                  <Orders />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/orders/:orderId"
+              element={
+                <ProtectedRoute>
+                  <OrderDetail />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/tickets"
+              element={
+                <ProtectedRoute>
+                  <Tickets />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/tickets/new"
+              element={
+                <ProtectedRoute>
+                  <NewTicket />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/tickets/:ticketId"
+              element={
+                <ProtectedRoute>
+                  <TicketChat />
+                </ProtectedRoute>
+              }
+            />
+
+            {/* 404 Route */}
+            <Route path="*" element={<NotFound />} />
+          </Routes>
+        </Layout>
+      </AuthProvider>
+    </BrowserRouter>
   );
 }

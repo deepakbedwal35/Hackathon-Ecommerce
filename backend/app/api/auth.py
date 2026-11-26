@@ -154,15 +154,17 @@ def login(
             status_code=status.HTTP_401_UNAUTHORIZED,
         )
 
+    user_id = user.id
+    user_role = user.role
     if not verify_password(payload.password, user.password_hash):
         record_failure(client_ip, normalized_email)
 
         audit_failed = AuditEvent(
-            actor_id=user.id,
-            actor_type=_role_to_actor_type(user.role),
+            actor_id=user_id,
+            actor_type=_role_to_actor_type(user_role),
             event_type="login_failed",
             entity_type="auth",
-            entity_id=user.id,
+            entity_id=user_id,
             audit_metadata={
                 "email_hash": _hash_email(normalized_email),
                 "reason": "invalid_credentials",
@@ -172,7 +174,7 @@ def login(
         db.add(audit_failed)
         db.commit()
 
-        logger.warning("login_failed", user_id=str(user.id), request_id=request_id)
+        logger.warning("login_failed", user_id=str(user_id), request_id=request_id)
         raise AppError(
             code="INVALID_CREDENTIALS",
             message="Invalid email or password.",
